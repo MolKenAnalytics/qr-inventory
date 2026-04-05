@@ -1,0 +1,1536 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>QR Inventory Pro</title>
+
+<!-- Firebase v9 compat -->
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
+<!-- QR decode -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jsQR/1.4.0/jsQR.min.js"></script>
+<!-- Google Font -->
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+
+<style>
+/* ════════════════════════════════════════════════════════
+   DESIGN SYSTEM  — Industrial Amber on Near-Black
+   Tone: Precision instrument, not a consumer app
+════════════════════════════════════════════════════════ */
+:root {
+  --ink:    #0a0c10;
+  --ink2:   #12161e;
+  --ink3:   #1a2030;
+  --plate:  #1e2535;
+  --frame:  #252d3d;
+  --wire:   #2e3a50;
+  --muted:  #4a5568;
+  --dim:    #6b7a96;
+  --mid:    #8896b0;
+  --lit:    #b0bdce;
+  --bright: #e8edf5;
+
+  --amber:  #f59e0b;
+  --amber2: #fbbf24;
+  --amber3: #fde68a;
+  --amber-bg: rgba(245,158,11,.08);
+  --amber-border: rgba(245,158,11,.25);
+
+  --green:  #10b981;
+  --green2: #34d399;
+  --green-bg: rgba(16,185,129,.08);
+  --red:    #ef4444;
+  --red2:   #f87171;
+  --red-bg: rgba(239,68,68,.08);
+  --blue:   #60a5fa;
+  --blue-bg: rgba(96,165,250,.08);
+
+  --nav-h: 60px;
+  --hdr-h: 54px;
+  --safe-b: env(safe-area-inset-bottom, 0px);
+  --font: 'Space Grotesk', sans-serif;
+  --mono: 'JetBrains Mono', monospace;
+  --r:    10px;
+  --r-lg: 16px;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%; overflow: hidden;
+  background: var(--ink); color: var(--bright);
+  font-family: var(--font); font-size: 15px;
+  -webkit-tap-highlight-color: transparent;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ── SETUP ─────────────────────────────────────────────── */
+#setup {
+  position: fixed; inset: 0; background: var(--ink);
+  display: flex; flex-direction: column; align-items: center;
+  justify-content: center; padding: 28px 20px; z-index: 300;
+}
+.setup-mark {
+  width: 72px; height: 72px; background: var(--amber);
+  border-radius: 20px; display: flex; align-items: center;
+  justify-content: center; font-size: 36px; margin-bottom: 20px;
+  box-shadow: 0 0 40px rgba(245,158,11,.4);
+}
+.setup-h1 { font-size: 26px; font-weight: 700; letter-spacing: -.5px; margin-bottom: 6px; }
+.setup-sub { font-size: 13px; color: var(--dim); text-align: center; max-width: 320px; margin-bottom: 28px; line-height: 1.6; }
+.setup-box { width: 100%; max-width: 440px; background: var(--ink2); border: 1px solid var(--wire); border-radius: var(--r-lg); padding: 24px; }
+.setup-box h3 { font-size: 13px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 16px; }
+.setup-row { margin-bottom: 14px; }
+.setup-label { display: block; font-size: 12px; color: var(--mid); margin-bottom: 5px; }
+.setup-input {
+  width: 100%; background: var(--ink3); border: 1px solid var(--wire);
+  border-radius: var(--r); padding: 10px 12px; color: var(--bright);
+  font-family: var(--mono); font-size: 12px; outline: none;
+}
+.setup-input:focus { border-color: var(--amber); }
+.setup-hint { font-size: 11px; color: var(--muted); margin-top: 5px; line-height: 1.5; }
+.setup-err { color: var(--red2); font-size: 12px; margin-top: 10px; display: none; }
+.setup-actions { display: flex; flex-direction: column; gap: 8px; margin-top: 16px; }
+.btn-amber {
+  width: 100%; padding: 13px; background: var(--amber); color: var(--ink);
+  border: none; border-radius: var(--r); font-family: var(--font);
+  font-size: 14px; font-weight: 700; cursor: pointer; transition: background .15s;
+}
+.btn-amber:hover { background: var(--amber2); }
+.btn-amber:disabled { opacity: .5; cursor: not-allowed; }
+.btn-ghost {
+  width: 100%; padding: 11px; background: transparent; color: var(--mid);
+  border: 1px solid var(--wire); border-radius: var(--r); font-family: var(--font);
+  font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.btn-ghost:hover { border-color: var(--dim); color: var(--bright); }
+
+/* ── APP SHELL ─────────────────────────────────────────── */
+#app { display: none; flex-direction: column; height: 100%; }
+
+/* ── HEADER ────────────────────────────────────────────── */
+header {
+  height: var(--hdr-h); background: var(--ink2); border-bottom: 1px solid var(--wire);
+  display: flex; align-items: center; padding: 0 16px; gap: 10px; flex-shrink: 0;
+  padding-top: env(safe-area-inset-top, 0);
+}
+.hdr-mark { width: 32px; height: 32px; background: var(--amber); border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 16px; flex-shrink: 0; }
+#hdr-title { font-size: 15px; font-weight: 700; flex: 1; }
+.hdr-actions { display: flex; gap: 6px; }
+.hdr-icon { background: none; border: none; color: var(--dim); font-size: 18px; cursor: pointer; padding: 6px; border-radius: 6px; line-height: 1; }
+.hdr-icon:active { background: var(--wire); }
+#progress { height: 2px; background: var(--amber); position: absolute; top: 0; left: 0; width: 0; transition: width .3s; display: none; }
+
+/* ── MAIN ──────────────────────────────────────────────── */
+main {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: calc(var(--nav-h) + var(--safe-b) + 8px);
+}
+.page { display: none; padding: 14px; animation: fadeIn .15s ease; }
+.page.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+/* ── BOTTOM NAV ────────────────────────────────────────── */
+nav {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  height: calc(var(--nav-h) + var(--safe-b));
+  background: var(--ink2); border-top: 1px solid var(--wire);
+  display: flex; padding-bottom: var(--safe-b); z-index: 50;
+}
+.nb {
+  flex: 1; display: flex; flex-direction: column; align-items: center;
+  justify-content: center; gap: 3px; background: none; border: none;
+  color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 600;
+  font-family: var(--font); text-transform: uppercase; letter-spacing: .4px;
+  padding: 4px 2px; transition: color .15s;
+}
+.nb .ni { font-size: 20px; line-height: 1; }
+.nb.active { color: var(--amber); }
+.nb.active .ni { filter: drop-shadow(0 0 4px var(--amber)); }
+.nb:active { opacity: .7; }
+
+/* ── CARDS ─────────────────────────────────────────────── */
+.card {
+  background: var(--ink2); border: 1px solid var(--wire);
+  border-radius: var(--r-lg); padding: 14px; margin-bottom: 12px;
+}
+.card-head { font-size: 11px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .7px; margin-bottom: 12px; display: flex; align-items: center; gap: 6px; }
+.card-head .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--amber); }
+
+/* ── KPI GRID ──────────────────────────────────────────── */
+.kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.kpi { background: var(--ink2); border: 1px solid var(--wire); border-radius: var(--r-lg); padding: 14px 14px 12px; position: relative; overflow: hidden; }
+.kpi::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; }
+.kpi.k-amber::before { background: var(--amber); }
+.kpi.k-green::before { background: var(--green); }
+.kpi.k-red::before   { background: var(--red); }
+.kpi.k-blue::before  { background: var(--blue); }
+.kpi.k-muted::before { background: var(--wire); }
+.kpi-val { font-size: 32px; font-weight: 700; letter-spacing: -1px; line-height: 1; margin-bottom: 5px; font-variant-numeric: tabular-nums; }
+.kpi.k-amber .kpi-val { color: var(--amber2); }
+.kpi.k-green .kpi-val { color: var(--green2); }
+.kpi.k-red   .kpi-val { color: var(--red2);   }
+.kpi.k-blue  .kpi-val { color: var(--blue);   }
+.kpi.k-muted .kpi-val { color: var(--mid);    }
+.kpi-label { font-size: 11px; color: var(--dim); font-weight: 500; line-height: 1.3; }
+
+/* ── SECTION HEADERS ───────────────────────────────────── */
+.sec-h { margin-bottom: 14px; }
+.sec-h h2 { font-size: 20px; font-weight: 700; letter-spacing: -.3px; }
+.sec-h p  { font-size: 13px; color: var(--dim); margin-top: 2px; }
+
+/* ── FORM ──────────────────────────────────────────────── */
+.field { margin-bottom: 12px; }
+.field label { display: block; font-size: 11px; font-weight: 600; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; margin-bottom: 6px; }
+.field label .req { color: var(--red2); }
+.finput, .fselect, .ftextarea {
+  width: 100%; background: var(--ink3); border: 1px solid var(--wire);
+  border-radius: var(--r); padding: 11px 13px; color: var(--bright);
+  font-family: var(--font); font-size: 14px; outline: none; appearance: none;
+}
+.finput:focus, .fselect:focus, .ftextarea:focus { border-color: var(--amber); background: var(--ink2); }
+.ftextarea { resize: vertical; min-height: 72px; }
+.fmono { font-family: var(--mono); font-size: 12px; }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.row3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+.autocomplete { position: relative; }
+.ac-list {
+  position: absolute; top: calc(100% + 3px); left: 0; right: 0; z-index: 100;
+  background: var(--plate); border: 1px solid var(--amber-border);
+  border-radius: var(--r); max-height: 220px; overflow-y: auto;
+  box-shadow: 0 8px 24px rgba(0,0,0,.5);
+}
+.ac-item { padding: 10px 13px; cursor: pointer; font-size: 13px; border-bottom: 1px solid var(--wire); display: flex; justify-content: space-between; align-items: center; }
+.ac-item:last-child { border-bottom: none; }
+.ac-item:hover, .ac-item.hi { background: var(--amber-bg); color: var(--amber2); }
+.ac-code { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+
+/* ── BUTTONS ────────────────────────────────────────────── */
+.btn {
+  width: 100%; padding: 13px; border: none; border-radius: var(--r);
+  font-family: var(--font); font-size: 14px; font-weight: 700; cursor: pointer;
+  transition: opacity .15s, transform .1s; display: flex; align-items: center; justify-content: center; gap: 6px;
+}
+.btn:active { transform: scale(.97); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.btn + .btn { margin-top: 8px; }
+.btn-primary { background: var(--amber); color: var(--ink); }
+.btn-primary:hover:not(:disabled) { background: var(--amber2); }
+.btn-success { background: var(--green); color: #fff; }
+.btn-danger  { background: var(--red); color: #fff; }
+.btn-outline { background: transparent; color: var(--mid); border: 1px solid var(--wire); }
+.btn-outline:hover:not(:disabled) { border-color: var(--dim); color: var(--bright); }
+.btn-sm { padding: 8px 14px; font-size: 12px; border-radius: 8px; width: auto; }
+
+/* ── SCAN BUTTON ────────────────────────────────────────── */
+.scan-btn {
+  width: 100%; padding: 20px; background: var(--ink3); border: 1.5px dashed var(--amber-border);
+  border-radius: var(--r-lg); color: var(--amber); cursor: pointer;
+  text-align: center; transition: all .2s; font-family: var(--font);
+}
+.scan-btn:hover { background: var(--amber-bg); border-color: var(--amber); }
+.scan-btn:active { transform: scale(.98); }
+.scan-icon { font-size: 28px; display: block; margin-bottom: 6px; }
+.scan-txt  { font-size: 13px; font-weight: 600; }
+.scan-sub  { font-size: 11px; color: var(--dim); margin-top: 3px; }
+
+/* ── DETAIL CARD ────────────────────────────────────────── */
+.detail-panel {
+  background: var(--ink3); border: 1px solid var(--amber-border);
+  border-radius: var(--r); padding: 13px; margin-top: 10px;
+}
+.detail-name { font-size: 15px; font-weight: 700; margin-bottom: 10px; color: var(--amber2); }
+.detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+.dc { background: var(--ink2); border-radius: 8px; padding: 8px 10px; }
+.dk { font-size: 10px; color: var(--muted); font-weight: 600; text-transform: uppercase; letter-spacing: .4px; margin-bottom: 3px; }
+.dv { font-size: 13px; font-weight: 700; font-family: var(--mono); }
+
+/* ── TOGGLE ────────────────────────────────────────────── */
+.toggle-row { display: flex; background: var(--ink3); border: 1px solid var(--wire); border-radius: var(--r); padding: 3px; margin-bottom: 14px; gap: 2px; }
+.topt { flex: 1; padding: 9px; text-align: center; border-radius: 8px; cursor: pointer; font-size: 12px; font-weight: 600; color: var(--muted); transition: all .2s; }
+.topt.on { background: var(--amber); color: var(--ink); }
+
+/* ── SCAN QUEUE ─────────────────────────────────────────── */
+.q-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.q-count { font-size: 12px; font-weight: 700; color: var(--amber); }
+.q-item {
+  background: var(--ink3); border: 1px solid var(--wire); border-radius: var(--r);
+  padding: 11px 12px; margin-bottom: 7px; display: flex; align-items: flex-start;
+  gap: 10px; animation: slideDown .18s ease;
+}
+@keyframes slideDown { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: none; } }
+.q-ico { font-size: 18px; margin-top: 1px; flex-shrink: 0; }
+.q-info { flex: 1; min-width: 0; }
+.q-name { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-meta { font-size: 11px; color: var(--dim); margin-top: 2px; }
+.q-id   { font-size: 10px; color: var(--muted); font-family: var(--mono); margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.q-del  { background: none; border: none; color: var(--red2); font-size: 16px; cursor: pointer; padding: 4px; flex-shrink: 0; }
+.q-ok   { color: var(--green2); }
+.q-err  { color: var(--red2); }
+
+/* ── STATUS BADGES ─────────────────────────────────────── */
+.badge { display: inline-block; padding: 3px 8px; border-radius: 6px; font-size: 11px; font-weight: 700; }
+.b-ok   { background: var(--green-bg);  color: var(--green2); }
+.b-warn { background: var(--amber-bg);  color: var(--amber2); }
+.b-err  { background: var(--red-bg);    color: var(--red2);   }
+.b-blue { background: var(--blue-bg);   color: var(--blue);   }
+.b-dim  { background: var(--ink3);      color: var(--mid);    }
+
+/* ── TABLE ─────────────────────────────────────────────── */
+.tbl-wrap { overflow-x: auto; border-radius: var(--r); border: 1px solid var(--wire); }
+table { width: 100%; border-collapse: collapse; font-size: 12px; }
+thead th { background: var(--ink3); padding: 10px 11px; text-align: left; font-size: 10px; font-weight: 700; color: var(--dim); text-transform: uppercase; letter-spacing: .5px; white-space: nowrap; border-bottom: 1px solid var(--wire); }
+tbody td { padding: 10px 11px; border-bottom: 1px solid rgba(46,58,80,.5); vertical-align: middle; }
+tbody tr:last-child td { border-bottom: none; }
+tbody tr:hover td { background: var(--amber-bg); }
+.td-name { font-size: 12px; font-weight: 600; }
+.td-code { font-family: var(--mono); font-size: 10px; color: var(--dim); }
+.td-val  { font-weight: 700; font-variant-numeric: tabular-nums; }
+.tbl-empty { text-align: center; padding: 32px; color: var(--muted); font-size: 13px; }
+.search-row { display: flex; gap: 8px; margin-bottom: 12px; }
+.search-row .finput { flex: 1; }
+.search-row .fselect { width: auto; flex-shrink: 0; }
+
+/* ── BAR CHART ─────────────────────────────────────────── */
+.bar-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
+.bar-lbl { font-size: 11px; color: var(--mid); width: 100px; text-align: right; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bar-track { flex: 1; background: var(--ink3); border-radius: 3px; height: 18px; overflow: hidden; }
+.bar-fill { height: 100%; background: var(--amber); border-radius: 3px; display: flex; align-items: center; justify-content: flex-end; padding-right: 5px; transition: width .5s ease; min-width: 24px; }
+.bar-val { font-size: 10px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.bar-fill.bar-green { background: var(--green); }
+
+/* ── RESULT BAR ─────────────────────────────────────────── */
+.result { border-radius: var(--r); padding: 11px 13px; font-size: 13px; font-weight: 600; margin-top: 10px; display: none; }
+.result.ok  { background: var(--green-bg); color: var(--green2); border: 1px solid rgba(16,185,129,.25); }
+.result.err { background: var(--red-bg);   color: var(--red2);   border: 1px solid rgba(239,68,68,.25);  }
+
+/* ── EMPTY STATE ────────────────────────────────────────── */
+.empty { text-align: center; padding: 36px 16px; color: var(--muted); }
+.empty .ei { font-size: 36px; margin-bottom: 10px; opacity: .4; }
+.empty p { font-size: 13px; }
+
+/* ── PREVIEW ────────────────────────────────────────────── */
+.preview-box {
+  background: var(--ink3); border: 1px solid var(--amber-border);
+  border-radius: var(--r); padding: 12px; margin-bottom: 12px; display: none;
+}
+.preview-box .pb-label { font-size: 10px; color: var(--amber); font-weight: 700; text-transform: uppercase; letter-spacing: .5px; margin-bottom: 7px; }
+.preview-box .pb-ids { font-family: var(--mono); font-size: 11px; color: var(--amber3); line-height: 1.9; }
+
+/* ── CAMERA OVERLAY ─────────────────────────────────────── */
+#cam {
+  display: none; position: fixed; inset: 0; background: #000;
+  flex-direction: column; z-index: 999;
+}
+#cam.open { display: flex; }
+#cam-top {
+  padding: 16px 16px; padding-top: calc(16px + env(safe-area-inset-top,0));
+  display: flex; align-items: center; justify-content: space-between; flex-shrink: 0;
+  background: linear-gradient(rgba(0,0,0,.8), transparent);
+  position: absolute; top: 0; left: 0; right: 0; z-index: 2;
+}
+#cam-lbl { font-size: 15px; font-weight: 700; color: #fff; }
+#cam-x { width: 36px; height: 36px; background: rgba(255,255,255,.15); border: none; color: #fff; border-radius: 50%; font-size: 18px; cursor: pointer; }
+#cam-vp { flex: 1; position: relative; overflow: hidden; }
+#cam-video { width: 100%; height: 100%; object-fit: cover; }
+#cam-frame {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%,-55%);
+  width: min(270px,72vw); height: min(270px,72vw); z-index: 2;
+}
+.c-corner { position: absolute; width: 24px; height: 24px; border-color: var(--amber); border-style: solid; }
+.c-tl { top:0; left:0;  border-width: 3px 0 0 3px; border-radius: 4px 0 0 0; }
+.c-tr { top:0; right:0; border-width: 3px 3px 0 0; border-radius: 0 4px 0 0; }
+.c-bl { bottom:0; left:0;  border-width: 0 0 3px 3px; border-radius: 0 0 0 4px; }
+.c-br { bottom:0; right:0; border-width: 0 3px 3px 0; border-radius: 0 0 4px 0; }
+#cam-line {
+  position: absolute; left: 4px; right: 4px; height: 2px;
+  background: var(--amber); box-shadow: 0 0 8px var(--amber);
+  animation: scanMove 2s ease-in-out infinite;
+}
+@keyframes scanMove { 0%,100%{top:4px} 50%{top:calc(100% - 6px)} }
+#cam-status {
+  position: absolute; bottom: 0; left: 0; right: 0; z-index: 2;
+  background: linear-gradient(transparent, rgba(0,0,0,.85));
+  padding: 28px 16px 10px; text-align: center;
+}
+#cam-stat { color: rgba(255,255,255,.8); font-size: 13px; font-weight: 500; }
+#cam-count { color: var(--amber); font-size: 13px; font-weight: 700; margin-top: 3px; }
+#cam-footer {
+  padding: 12px 16px; padding-bottom: calc(12px + env(safe-area-inset-bottom,0));
+  display: flex; gap: 10px; flex-shrink: 0; background: rgba(0,0,0,.9);
+}
+#cam-cancel { flex: 1; padding: 13px; background: rgba(255,255,255,.1); border: none; border-radius: var(--r); color: #fff; font-family: var(--font); font-size: 14px; font-weight: 600; cursor: pointer; }
+#cam-done   { flex: 1; padding: 13px; background: var(--green); border: none; border-radius: var(--r); color: #fff; font-family: var(--font); font-size: 14px; font-weight: 700; cursor: pointer; display: none; }
+
+/* ── FLASH ──────────────────────────────────────────────── */
+#flash { position: fixed; inset: 0; background: rgba(245,158,11,.25); pointer-events: none; opacity: 0; z-index: 1000; }
+#flash.go { animation: fl .25s ease-out forwards; }
+@keyframes fl { 0%{opacity:1} 100%{opacity:0} }
+
+/* ── TOAST ──────────────────────────────────────────────── */
+#toast {
+  position: fixed; bottom: calc(var(--nav-h) + var(--safe-b) + 10px);
+  left: 14px; right: 14px; padding: 12px 14px; border-radius: var(--r);
+  font-size: 13px; font-weight: 600; z-index: 400; display: none; text-align: center;
+  animation: toastUp .2s ease-out;
+}
+@keyframes toastUp { from{transform:translateY(8px);opacity:0} to{transform:none;opacity:1} }
+#toast.tok  { background: #14532d; color: var(--green2); border: 1px solid rgba(52,211,153,.2); }
+#toast.terr { background: #450a0a; color: var(--red2);   border: 1px solid rgba(248,113,113,.2); }
+#toast.tinfo{ background: var(--plate); color: var(--bright); border: 1px solid var(--wire); }
+
+/* ── MODAL ──────────────────────────────────────────────── */
+#modal-bg { display: none; position: fixed; inset: 0; background: rgba(0,0,0,.7); z-index: 200; align-items: flex-end; justify-content: center; }
+#modal-bg.open { display: flex; }
+.modal-sheet { background: var(--ink2); border: 1px solid var(--wire); border-radius: 20px 20px 0 0; padding: 22px; padding-bottom: calc(22px + env(safe-area-inset-bottom,0)); width: 100%; max-width: 500px; max-height: 90vh; overflow-y: auto; }
+.modal-hdr { display: flex; align-items: center; justify-content: space-between; margin-bottom: 18px; }
+.modal-title { font-size: 16px; font-weight: 700; }
+.modal-close { background: none; border: none; color: var(--dim); font-size: 20px; cursor: pointer; }
+
+/* ── QUICK ACTIONS (dashboard) ─────────────────────────── */
+.qa-row { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.qa { background: var(--ink2); border: 1px solid var(--wire); border-radius: var(--r-lg); padding: 16px 12px; cursor: pointer; text-align: center; transition: border-color .15s; }
+.qa:hover, .qa:active { border-color: var(--amber); }
+.qa .qi { font-size: 24px; margin-bottom: 7px; }
+.qa .ql { font-size: 13px; font-weight: 700; }
+.qa .qs { font-size: 11px; color: var(--dim); margin-top: 3px; }
+
+/* ── ITEMS PAGE ─────────────────────────────────────────── */
+.item-row { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--wire); }
+.item-row:last-child { border-bottom: none; }
+.item-name-col { flex: 1; font-size: 13px; font-weight: 600; }
+.item-code-col { font-family: var(--mono); font-size: 11px; color: var(--dim); width: 80px; }
+.item-uom-col  { font-size: 11px; color: var(--muted); width: 36px; text-align: center; }
+.item-del-btn  { background: none; border: none; color: var(--red2); font-size: 16px; cursor: pointer; padding: 4px; opacity: .6; }
+.item-del-btn:hover { opacity: 1; }
+</style>
+</head>
+<body>
+
+<!-- ══════════ SETUP ════════════════════════════════════════ -->
+<div id="setup">
+  <div class="setup-mark">📦</div>
+  <h1 class="setup-h1">QR Inventory Pro</h1>
+  <p class="setup-sub">Connect your Firebase project to start tracking inventory with QR scanning.</p>
+  <div class="setup-box">
+    <h3>Firebase Configuration</h3>
+    <div class="setup-row">
+      <label class="setup-label">API Key</label>
+      <input class="setup-input" id="cfg-apiKey" placeholder="AIzaSy…" autocomplete="off" autocorrect="off" spellcheck="false">
+    </div>
+    <div class="setup-row">
+      <label class="setup-label">Auth Domain</label>
+      <input class="setup-input" id="cfg-authDomain" placeholder="your-app.firebaseapp.com" autocomplete="off">
+    </div>
+    <div class="setup-row">
+      <label class="setup-label">Project ID</label>
+      <input class="setup-input" id="cfg-projectId" placeholder="your-project-id" autocomplete="off">
+    </div>
+    <p class="setup-hint">Find these in Firebase Console → Project Settings → Your apps → Web app config. See SETUP.txt for step-by-step instructions.</p>
+    <p class="setup-err" id="cfg-err"></p>
+    <div class="setup-actions">
+      <button class="btn-amber" onclick="doSetup()" id="setup-btn">Connect & Launch →</button>
+      <button class="btn-ghost" onclick="tryDemo()">Try with Demo Data (no Firebase)</button>
+    </div>
+    <div id="setup-loading" style="text-align:center;color:var(--dim);font-size:12px;margin-top:12px;display:none">Connecting…</div>
+  </div>
+</div>
+
+<!-- ══════════ APP ══════════════════════════════════════════ -->
+<div id="app">
+  <div id="progress"></div>
+  <header>
+    <div class="hdr-mark">📦</div>
+    <span id="hdr-title">Dashboard</span>
+    <div class="hdr-actions">
+      <button class="hdr-icon" onclick="refreshCurrent()" title="Refresh">↻</button>
+      <button class="hdr-icon" onclick="openSettings()" title="Settings">⚙</button>
+    </div>
+  </header>
+
+  <main>
+
+    <!-- ── DASHBOARD ─────────────────────────────────────── -->
+    <div class="page active" id="pg-dash">
+      <div class="sec-h"><h2>Dashboard</h2><p id="dash-ts">Loading…</p></div>
+      <div class="kpi-grid">
+        <div class="kpi k-green"><div class="kpi-val" id="k-instock">—</div><div class="kpi-label">Items In Stock</div></div>
+        <div class="kpi k-red">  <div class="kpi-val" id="k-oos">—</div>    <div class="kpi-label">Out of Stock</div></div>
+        <div class="kpi k-amber"><div class="kpi-val" id="k-pend">—</div>   <div class="kpi-label">Pending Inward</div></div>
+        <div class="kpi k-muted"><div class="kpi-val" id="k-pm">—</div>     <div class="kpi-label">Print Master</div></div>
+        <div class="kpi k-blue"> <div class="kpi-val" id="k-iw">—</div>     <div class="kpi-label">Inward Scanned</div></div>
+        <div class="kpi k-muted"><div class="kpi-val" id="k-ow">—</div>     <div class="kpi-label">Outward Entries</div></div>
+      </div>
+      <div class="qa-row">
+        <div class="qa" onclick="goPage('inward')"><div class="qi">📥</div><div class="ql">Receive Bags</div><div class="qs">Scan inward</div></div>
+        <div class="qa" onclick="goPage('outward')"><div class="qi">📤</div><div class="ql">Issue / Transfer</div><div class="qs">Outward entry</div></div>
+        <div class="qa" onclick="goPage('master')"><div class="qi">📦</div><div class="ql">New Batch</div><div class="qs">Print Master</div></div>
+        <div class="qa" onclick="goPage('stock')"><div class="qi">📋</div><div class="ql">View Stock</div><div class="qs">Live inventory</div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Top 20 RM Consumption by Department</div>
+        <div id="dash-dept"><div class="empty"><div class="ei">📊</div><p>Loading…</p></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Monthly Outward Trend</div>
+        <div id="dash-month"><div class="empty"><div class="ei">📅</div><p>Loading…</p></div></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Top 20 Raw Materials Consumed</div>
+        <div id="dash-items"><div class="empty"><div class="ei">🧪</div><p>Loading…</p></div></div>
+      </div>
+    </div>
+
+    <!-- ── PRINT MASTER ───────────────────────────────────── -->
+    <div class="page" id="pg-master">
+      <div class="sec-h"><h2>New Batch Entry</h2><p>Creates bag records & generates Pack IDs</p></div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Supplier Details</div>
+        <div class="row2">
+          <div class="field"><label>Date Received</label><input class="finput" id="pm-date" type="text" readonly></div>
+          <div class="field"><label>Supplier <span class="req">*</span></label><input class="finput" id="pm-sup" placeholder="Supplier name"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Invoice No. <span class="req">*</span></label><input class="finput" id="pm-inv" placeholder="e.g. INV-1087"></div>
+          <div class="field"><label>Batch Code</label><input class="finput" id="pm-batch" placeholder="If available"></div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Item Details</div>
+        <div class="field autocomplete">
+          <label>Item Name <span class="req">*</span></label>
+          <input class="finput" id="pm-item" placeholder="Type to search…" oninput="acSearch(this.value,'pm')" onkeydown="acKey(event,'pm')" autocomplete="off">
+          <div class="ac-list" id="pm-ac" style="display:none"></div>
+        </div>
+        <div class="row3">
+          <div class="field"><label>Item Code</label><input class="finput fmono" id="pm-code" placeholder="Auto" readonly></div>
+          <div class="field"><label>Lot No. <span class="req">*</span></label><input class="finput" id="pm-lot" type="number" placeholder="1"></div>
+          <div class="field"><label>UOM</label>
+            <select class="fselect" id="pm-uom"><option>Kg</option><option>g</option><option>L</option><option>mL</option><option>Nos</option><option>Pcs</option></select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Pack Qty <span class="req">*</span></label><input class="finput" id="pm-pqty" type="number" placeholder="e.g. 25" oninput="updatePreview()"></div>
+          <div class="field"><label>No. of Bags <span class="req">*</span></label><input class="finput" id="pm-bags" type="number" placeholder="e.g. 20" oninput="updatePreview()"></div>
+        </div>
+        <div class="field"><label>Remarks</label><input class="finput" id="pm-rem" placeholder="Optional"></div>
+        <div class="preview-box" id="pm-preview">
+          <div class="pb-label">Pack ID Preview</div>
+          <div class="pb-ids" id="pm-prev-ids"></div>
+        </div>
+        <button class="btn btn-primary" onclick="submitPM()">📦 Generate Pack Labels</button>
+      </div>
+      <div class="result" id="pm-res"></div>
+
+      <div class="card" style="margin-top:4px">
+        <div class="card-head"><span class="dot"></span>Recent Batches</div>
+        <div class="tbl-wrap">
+          <table><thead><tr><th>Pack ID</th><th>Item</th><th>Bags</th><th>Supplier</th><th>Date</th></tr></thead>
+          <tbody id="pm-tbl"><tr><td colspan="5" class="tbl-empty">Loading…</td></tr></tbody></table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── INWARD ─────────────────────────────────────────── -->
+    <div class="page" id="pg-inward">
+      <div class="sec-h"><h2>Inward</h2><p>Receive bags into warehouse</p></div>
+      <div class="toggle-row">
+        <div class="topt on" onclick="setInMode('single')">📦 Individual</div>
+        <div class="topt"    onclick="setInMode('bulk')">📚 Bulk Scan</div>
+      </div>
+      <div class="card">
+        <div class="field"><label>Warehouse <span class="req">*</span></label>
+          <select class="fselect" id="in-wh">
+            <option value="">— Select warehouse —</option>
+            <option>COLD ROOM</option><option>BULK ROOM</option>
+            <option>SOLVENT GODOWN</option><option>STERILE ROOM</option>
+            <option>BLACK ROOM</option><option>SEED GODOWN</option>
+          </select>
+        </div>
+        <div class="scan-btn" onclick="inScan()">
+          <span class="scan-icon">📷</span>
+          <div class="scan-txt" id="in-scan-txt">Tap to Scan QR Code</div>
+          <div class="scan-sub">Point at QR label on bag</div>
+        </div>
+        <!-- Individual result -->
+        <div id="in-single-res" style="display:none">
+          <div class="detail-panel">
+            <div class="detail-name" id="in-rname"></div>
+            <div class="detail-grid">
+              <div class="dc"><div class="dk">Pack ID</div><div class="dv" style="font-size:10px" id="in-rpid"></div></div>
+              <div class="dc"><div class="dk">Bag No.</div><div class="dv" id="in-rbag"></div></div>
+              <div class="dc"><div class="dk">Pack Qty</div><div class="dv" id="in-rqty"></div></div>
+              <div class="dc"><div class="dk">Lot No.</div><div class="dv" id="in-rlot"></div></div>
+            </div>
+          </div>
+          <button class="btn btn-success" id="in-confirm" onclick="confirmInward()">✅ Confirm Receipt</button>
+          <button class="btn btn-outline" onclick="clearInSingle()">Scan Different</button>
+        </div>
+      </div>
+      <!-- Bulk queue -->
+      <div id="in-bulk-panel" style="display:none">
+        <div class="q-header">
+          <span class="q-count" id="in-q-lbl">0 bags queued</span>
+          <button class="btn-ghost btn-sm" onclick="clearBulkQueue()" id="in-clr" style="display:none">Clear All</button>
+        </div>
+        <div id="in-q-list"><div class="empty"><div class="ei">📷</div><p>Scan bags above — they queue here</p></div></div>
+        <button class="btn btn-success" id="in-bulk-submit" onclick="submitBulk()" style="display:none;margin-top:4px">✅ Submit All to Database</button>
+      </div>
+      <div class="result" id="in-res"></div>
+    </div>
+
+    <!-- ── OUTWARD ────────────────────────────────────────── -->
+    <div class="page" id="pg-outward">
+      <div class="sec-h"><h2>Outward</h2><p>Issue · Transfer · Adjustment</p></div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Transaction</div>
+        <div class="row2">
+          <div class="field"><label>Transaction Type <span class="req">*</span></label>
+            <select class="fselect" id="ow-txn" onchange="owTxnChange()">
+              <option value="">— Select —</option>
+              <option>ISSUE</option><option>TRANSFER</option><option>ADJUSTMENT</option>
+            </select>
+          </div>
+          <div class="field"><label>Issue Type <span class="req">*</span></label>
+            <select class="fselect" id="ow-type">
+              <option value="">— Select —</option>
+              <option>PRODUCTION</option><option>WIP</option><option>CONTAINER</option>
+              <option>SAMPLE</option><option>QUALITY</option>
+              <option>LOSS</option><option>DAMAGE</option><option>RETURN</option><option>CORRECTION</option>
+            </select>
+          </div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>Issued To <span class="req">*</span></label>
+            <select class="fselect" id="ow-to">
+              <option value="">— Select —</option>
+              <option>NANO</option><option>BOTANICAL</option><option>MPD</option><option>MPFU</option>
+              <option>LIQUID</option><option>GRANULES</option><option>SALES</option><option>SSF</option>
+              <option>QC MICROBIAL</option><option>QC CHEM</option><option>SECURITY</option><option>LIVE STORE</option>
+            </select>
+          </div>
+          <div class="field"><label>Issued Qty (Kg) <span class="req">*</span></label>
+            <input class="finput" id="ow-qty" type="number" placeholder="e.g. 25.5" min="0" step="0.001">
+          </div>
+        </div>
+        <div class="field"><label>BOM No.</label><input class="finput" id="ow-bom" placeholder="Optional"></div>
+      </div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Source — Scan Pack ID</div>
+        <div class="scan-btn" onclick="owScanSrc()">
+          <span class="scan-icon">📷</span>
+          <div class="scan-txt" id="ow-src-txt">Tap to Scan Source Pack ID</div>
+        </div>
+        <div class="detail-panel" id="ow-src-card" style="display:none">
+          <div class="detail-name" id="ow-src-name"></div>
+          <div class="detail-grid">
+            <div class="dc"><div class="dk">Pack ID</div><div class="dv" style="font-size:10px" id="ow-src-pid"></div></div>
+            <div class="dc"><div class="dk">Bag No.</div><div class="dv" id="ow-src-bag"></div></div>
+            <div class="dc"><div class="dk">Pack Qty</div><div class="dv" id="ow-src-qty"></div></div>
+            <div class="dc"><div class="dk">Lot No.</div><div class="dv" id="ow-src-lot"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card" id="ow-cont-section" style="display:none">
+        <div class="card-head"><span class="dot"></span>Container ID <span class="badge b-err" style="margin-left:4px">Required for Transfer</span></div>
+        <div class="scan-btn" onclick="owScanCont()">
+          <span class="scan-icon">📷</span>
+          <div class="scan-txt" id="ow-cont-txt">Tap to Scan Container ID</div>
+        </div>
+        <div class="detail-panel" id="ow-cont-card" style="display:none">
+          <div class="detail-name" id="ow-cont-name"></div>
+          <div class="detail-grid">
+            <div class="dc"><div class="dk">Container ID</div><div class="dv" style="font-size:10px" id="ow-cont-id"></div></div>
+            <div class="dc"><div class="dk">Current Qty</div><div class="dv" id="ow-cont-qty"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="card">
+        <div class="field">
+          <label>Remarks <span id="ow-rem-req" style="color:var(--red2);display:none">* Required for Adjustment</span></label>
+          <textarea class="ftextarea" id="ow-rem" placeholder="Optional"></textarea>
+        </div>
+        <button class="btn btn-danger" onclick="submitOutward()">📤 Submit Outward Entry</button>
+      </div>
+      <div class="result" id="ow-res"></div>
+    </div>
+
+    <!-- ── STOCK ──────────────────────────────────────────── -->
+    <div class="page" id="pg-stock">
+      <div class="sec-h"><h2>Stock</h2><p>Live inventory levels</p></div>
+      <div class="search-row">
+        <input class="finput" id="stk-q" placeholder="🔍 Search item…" oninput="filterStock()">
+        <select class="fselect" id="stk-f" onchange="filterStock()">
+          <option value="">All</option>
+          <option value="IN STOCK">In Stock</option>
+          <option value="REORDER">Reorder</option>
+          <option value="OUT">Out of Stock</option>
+        </select>
+      </div>
+      <div class="tbl-wrap">
+        <table>
+          <thead><tr><th>Item</th><th>UOM</th><th>Bags</th><th>Qty</th><th>Issued</th><th>Stock</th><th>Status</th></tr></thead>
+          <tbody id="stk-body"><tr><td colspan="7" class="tbl-empty">Loading…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- ── ITEMS MASTER ───────────────────────────────────── -->
+    <div class="page" id="pg-items">
+      <div class="sec-h"><h2>Items Master</h2><p>Manage item codes and names</p></div>
+      <div class="card">
+        <div class="card-head"><span class="dot"></span>Add New Item</div>
+        <div class="row2">
+          <div class="field"><label>Item Name <span class="req">*</span></label><input class="finput" id="ni-name" placeholder="Full item name"></div>
+          <div class="field"><label>Item Code <span class="req">*</span></label><input class="finput fmono" id="ni-code" placeholder="e.g. 153687"></div>
+        </div>
+        <div class="row2">
+          <div class="field"><label>UOM</label>
+            <select class="fselect" id="ni-uom"><option>Kg</option><option>g</option><option>L</option><option>mL</option><option>Nos</option><option>Pcs</option></select>
+          </div>
+          <div class="field"><label>Reorder Level (Kg)</label><input class="finput" id="ni-reorder" type="number" placeholder="Optional"></div>
+        </div>
+        <button class="btn btn-primary" onclick="addItem()">+ Add Item</button>
+      </div>
+      <div class="result" id="ni-res"></div>
+      <div class="card">
+        <div class="search-row" style="margin-bottom:10px">
+          <input class="finput" id="items-q" placeholder="🔍 Search items…" oninput="filterItems()">
+        </div>
+        <div id="items-list" style="max-height:400px;overflow-y:auto;"></div>
+      </div>
+    </div>
+
+  </main>
+
+  <nav>
+    <button class="nb active" data-p="dash"    onclick="goPage('dash')"   ><span class="ni">📊</span>Dash</button>
+    <button class="nb"        data-p="inward"  onclick="goPage('inward')" ><span class="ni">📥</span>Inward</button>
+    <button class="nb"        data-p="outward" onclick="goPage('outward')"><span class="ni">📤</span>Outward</button>
+    <button class="nb"        data-p="master"  onclick="goPage('master')" ><span class="ni">📦</span>Entry</button>
+    <button class="nb"        data-p="stock"   onclick="goPage('stock')"  ><span class="ni">📋</span>Stock</button>
+    <button class="nb"        data-p="items"   onclick="goPage('items')"  ><span class="ni">🧪</span>Items</button>
+  </nav>
+</div><!-- /app -->
+
+<!-- ══════════ CAMERA ════════════════════════════════════════ -->
+<div id="cam">
+  <div id="cam-top">
+    <span id="cam-lbl">Scan QR Code</span>
+    <button id="cam-x" onclick="camClose()">✕</button>
+  </div>
+  <div id="cam-vp">
+    <video id="cam-video" autoplay playsinline muted></video>
+    <div id="cam-frame">
+      <div class="c-corner c-tl"></div><div class="c-corner c-tr"></div>
+      <div class="c-corner c-bl"></div><div class="c-corner c-br"></div>
+      <div id="cam-line"></div>
+    </div>
+    <div id="cam-status">
+      <div id="cam-stat">Point camera at QR code</div>
+      <div id="cam-count"></div>
+    </div>
+  </div>
+  <div id="cam-footer">
+    <button id="cam-cancel" onclick="camClose()">✕ Cancel</button>
+    <button id="cam-done" onclick="camDone()">✅ Done</button>
+  </div>
+</div>
+<div id="flash"></div>
+<div id="toast"></div>
+
+<!-- ══════════ SETTINGS MODAL ════════════════════════════════ -->
+<div id="modal-bg" onclick="if(event.target===this)closeMod()">
+  <div class="modal-sheet">
+    <div class="modal-hdr"><span class="modal-title">Settings</span><button class="modal-close" onclick="closeMod()">✕</button></div>
+    <div class="field"><label>Firebase API Key</label><input class="finput fmono" id="set-key" style="font-size:11px"></div>
+    <div class="field"><label>Auth Domain</label><input class="finput fmono" id="set-domain" style="font-size:11px"></div>
+    <div class="field"><label>Project ID</label><input class="finput fmono" id="set-pid" style="font-size:11px"></div>
+    <button class="btn btn-primary" onclick="saveSettings()" style="margin-bottom:8px">Save & Reconnect</button>
+    <button class="btn btn-outline" onclick="seedItems()" id="seed-btn">Import All 450 Items from Master List</button>
+    <button class="btn btn-outline" onclick="exportData()" style="margin-top:8px">Export All Data (JSON)</button>
+    <div id="set-msg" style="font-size:12px;color:var(--dim);text-align:center;margin-top:10px"></div>
+  </div>
+</div>
+
+<script>
+'use strict';
+// ═══════════════════════════════════════════════════════════
+//  SEED DATA — 450 items from your Excel master list
+// ═══════════════════════════════════════════════════════════
+const SEED=[["Ascorbic Acid", "156745", "Kg"], ["Inactivated Yeast  Powder", "158382", "Kg"], ["2 Bromo 2 Nitro 1,3 Proponadol", "5735010", "Kg"], ["25-Hydroxy Vitamin D3 Monohydrate - Mg", "177822", "Kg"], ["Acetone", "304", "Kg"], ["Activated Carbon", "149623", "Kg"], ["Acurofloc", "159422", "Kg"], ["Adjuvants (Silicon Adjunavt)", "165097", "Kg"], ["Aerosol", "157768", "Kg"], ["Ajwain Crude", "291", "Kg"], ["Alkaline Protease 200000U/G", "159453", "Kg"], ["Alpha Amylase- C", "268", "Kg"], ["Alpha Amylase- Liquid", "296", "Kg"], ["Alpinia Galanga Ext", "153669", "Kg"], ["Alumina Oxide Neutral", "157913", "Kg"], ["Aminocid Powder", "160674", "Kg"], ["Amla Extract", "281", "Kg"], ["Ammonium Chloride", "165577", "Kg"], ["Ammonium Citrate", "156662", "Kg"], ["Ammonium Molybdate", "149874", "Kg"], ["Ammonium Sulphate", "145981", "Kg"], ["Andrographis Paniculata Ext", "155292", "Kg"], ["Anise Oil", "147880", "Kg"], ["Annatto", "1337151", "Kg"], ["Ashwagandha Ext", "155301", "Kg"], ["Aspartame", "162080", "Kg"], ["Astaxanthine 10%", "1393019", "Kg"], ["Aswaganda Crude", "153336", "Kg"], ["Azadirachtin Tech Powder I Neem Extract", "164144", "Kg"], ["Bale Leaf Powder (Aegle Marmelos)", "5983103", "Kg"], ["Benzoic Acid", "152845", "Kg"], ["Bergamot Oil", "7437001", "Kg"], ["Beta Cyclodextrin", "8719431", "Kg"], ["Betaine", "147557", "Kg"], ["Bhringraj Powder", "161769", "Kg"], ["Bile Salts", "151932", "Kg"], ["Bio Fulvic Acid", "161307", "Kg"], ["Bio Yucca", "8087622", "Kg"], ["Biotin 2% (Feed Grade)", "148117", "Kg"], ["Black Cumin Oil", "6275261", "Kg"], ["Black Pepper Extract", "165039", "Kg"], ["Bleaching Powder", "147936", "Kg"], ["Boric Acid", "161787", "Kg"], ["Brill Green Lcm 85%", "1191067", "Kg"], ["Brilliant Blue", "1314039", "Kg"], ["Butylated Hydroxy Touluene", "156792", "Kg"], ["C.M.C", "146498", "Kg"], ["C9 Solvent", "146012", "Kg"], ["Caffeine Anhydrous", "152510", "Kg"], ["Calcium Carbonate Ppt", "149634", "Kg"], ["Calcium Chloride", "163667", "Kg"], ["Calcium Citrate", "3812049", "Kg"], ["Calcium Gluconate", "146205", "Kg"], ["Calcium Lactate", "149852", "Kg"], ["Calcium Nitrate", "152112", "Kg"], ["Calcium Propanoate", "147619", "Kg"], ["Calcium-D-Pantothenate", "3837177", "Kg"], ["Carbons", "152470", "Kg"], ["Carbopol 940", "148171", "Kg"], ["Carmosine Supra", "148012", "Kg"], ["Castor Oil", "165272", "Kg"], ["Caustic Potash Flakes", "148225", "Kg"], ["Caustic Soda Flakes", "146480", "Kg"], ["Cedarwood Oil", "159731", "Kg"], ["Cellulase", "158745", "Kg"], ["China Clay", "178962", "Kg"], ["Chirayata Dry Extract", "161751", "Kg"], ["Chitosan", "148305", "Kg"], ["Chitosan 10%", "305", "Kg"], ["Chloro Methyl Napthalene", "158480", "Kg"], ["Chlorophyriphos Tech", "146923", "Kg"], ["Cholecalciferol", "150141", "Kg"], ["Chromium Picolinate", "276", "Kg"], ["Chrysanthemum Oil", "149495", "Kg"], ["Cinnamic Aldehyde", "6275272", "Kg"], ["Cinnamon Oil", "2122473", "Kg"], ["Ciprofloxacin", "299", "Kg"], ["Citric Acid", "151464", "Kg"], ["Citronella Oil", "155193", "Kg"], ["Citrus Peel Oil", "155861", "Kg"], ["Clarcel - Diatomite Filter Aid", "156571", "Kg"], ["Clove Bud Oil", "155319", "Kg"], ["Cmc", "146489", "Kg"], ["Cobalt Sulphate", "147679", "Kg"], ["Cocktail Enzyme", "204149", "Kg"], ["Coconut Powder", "8470279", "Kg"], ["Cold Pressed Neem Kernel Oil", "157570", "Kg"], ["Coriander Leaf Ext", "153696", "Kg"], ["Corn Steep Liquor", "156004", "Kg"], ["Cupric Sulphate (Copper Sulphate) Sq Qualigens 500G", "162400", "Kg"], ["Custard Apple Seeds", "416179", "Kg"], ["Cyclohexanone", "144676", "Kg"], ["Cynacobalamine", "152519", "Kg"], ["Cynasob-T (Sodium Cynide)", "144938", "Kg"], ["Cypermethrin 25% Ex", "144992", "Kg"], ["Cypermethrin Tech", "144875", "Kg"], ["D L Malic Acid", "149997", "Kg"], ["D M F", "147331", "Kg"], ["D M P A T", "144600", "Kg"], ["Dbo Neem Oil", "144591", "Kg"], ["Dcp ( Rock Powder)", "151180", "Kg"], ["Dehydrated Garlic Powder", "157294", "Kg"], ["Deltamethrin Tech", "147199", "Kg"], ["Detanol - 10", "144759", "Kg"], ["Detanol - F", "144750", "Kg"], ["Dextrose", "151140", "Kg"], ["Dhania Dry Extract", "161778", "Kg"], ["Dhaniya Powder", "893082", "Kg"], ["Di  Sodium  Orthophosphate", "5857195", "Kg"], ["Di Fluoro Benzanol 98%", "284", "Kg"], ["Di Methyl Formamide (B)", "179036", "Kg"], ["Di Methyl Sulphoxide", "161249", "Kg"], ["Di Potassium Hydrogen Ortho Phosphate", "151881", "Kg"], ["Di Sodium Octaborate Tetrahydrate", "647609", "Kg"], ["Diatomaceous Earth Powder", "153716", "Kg"], ["Dicalcium Phosphate", "157837", "Kg"], ["Dispersol R", "150850", "Kg"], ["Dl Methionine", "177565", "Kg"], ["Dl Tartaric Acid", "146247", "Kg"], ["Dm Water", "163844", "Kg"], ["Dried Magnesium Sulphate", "146730", "Kg"], ["Dugdhika Extract", "9051563", "Kg"], ["Edta Di Sodium", "155751", "Kg"], ["Emulsifiers", "157095", "Kg"], ["Ethyl Acetate", "147588", "Kg"], ["Ethylenediaminetetra Acetic Acid", "162552", "Kg"], ["Eucalyptus Oil", "144848", "Kg"], ["Fenugreek extract", "283", "Kg"], ["Fenvalerate Tech", "149531", "Kg"], ["Fermentation Adjuvant", "147463", "Kg"], ["Ferric Alum", "145970", "Kg"], ["Ferric Alum Citrate", "155843", "Kg"], ["Ferric Ammonium Citrate", "144884", "Kg"], ["Ferric Chloride", "1593598", "Kg"], ["Ferrous Phosphate (Granules)", "277", "Kg"], ["Ferrous Sulphate", "152237", "Kg"], ["Fi Pigment Red It", "148072", "Kg"], ["Filtered Pure Neem Oil", "148601", "Kg"], ["Fish oil", "149486", "Kg"], ["Folic Acid", "647620", "Kg"], ["Formaldehyde", "306", "Kg"], ["Formic Acid", "159480", "Kg"], ["Fructooligosaccharides- Foslife", "152043", "Kg"], ["Fulvic Acid", "158172", "Kg"], ["Furandizole", "298", "Kg"], ["Galactosidase", "274", "Kg"], ["Galangal Ext", "163513", "Kg"], ["Garlic Oil", "149863", "Kg"], ["Gelatine Powder", "164155", "Kg"], ["Ginger Extract", "6970069", "Kg"], ["Ginger Oil", "184482", "Kg"], ["Ginodet Bkc 50", "152061", "Kg"], ["Ginseng Extract", "163638", "Kg"], ["Glacial Acetic Acid", "9073001", "Kg"], ["Glycerine", "152052", "Kg"], ["Gracinia Cambogia Extract", "151976", "Kg"], ["Grade C Cola Having Gcv Of More Thank 5000Kcal", "155742", "Kg"], ["Grape Fruit Snn", "161012", "Kg"], ["Grapeseed Oil", "151455", "Kg"], ["Guar Gum Powder", "148144", "Kg"], ["Guduchi Extract", "152649", "Kg"], ["Haldi Powder", "157797", "Kg"], ["Henna Powder", "159740", "Kg"], ["Hexane", "148592", "Kg"], ["Hing Dry Extract", "165021", "Kg"], ["Hingee Powder", "165066", "Kg"], ["Horsegram Seeds", "1337119", "Kg"], ["Hydrochloric Acid", "4408103", "Kg"], ["Hydrogen Peroxide", "149948", "Kg"], ["IGSURF-6000E", "153235", "Kg"], ["IGSURF-7000E", "153244", "Kg"], ["Inositol", "161760", "Kg"], ["Intercept Granules", "165057", "Kg"], ["Inulin", "147916", "Kg"], ["Iso Butyric Acid", "161964", "Kg"], ["Iso Propyl Alcohol", "302", "Kg"], ["Ivermectin Feed Grade", "148126", "Kg"], ["Jeevanthi Extract", "292", "Kg"], ["Kadmba Oil", "177756", "Kg"], ["Kalmegh Crude Powder", "5848001", "Kg"], ["Kalmegh Extract", "3515110", "Kg"], ["Kalthi Extract", "295", "Kg"], ["Karakkaya Choornam", "151921", "Kg"], ["KARANJIN OIL", "179049", "Kg"], ["Karanjin Seed", "149504", "Kg"], ["Karanjin Standard", "6275710", "Kg"], ["Kranjin Plus (Botanical Extract)", "155733", "Kg"], ["Ksp Colloidal Silver", "152930", "Kg"], ["Kulanjan (Alpinia Galanga) Extract", "146914", "Kg"], ["Kumari Choornam", "157160", "Kg"], ["Kutki Extract", "159016", "Kg"], ["L - Lysine", "177667", "Kg"], ["L Cysteine Hcl Mono Hydrate", "6432001", "Kg"], ["L Glutamic Acid", "152685", "Kg"], ["L Threonine", "165030", "Kg"], ["L- Lactic Acid", "306", "Kg"], ["L-Arginine", "151149", "Kg"], ["L-Threonine", "162230", "Kg"], ["Laccase", "163806", "Kg"], ["Lactose Mono", "151160", "Kg"], ["Lavender Oil", "152834", "Kg"], ["Lcysteine", "152638", "Kg"], ["Lemongrass Oil", "146681", "Kg"], ["Licorice Root Extract", "149988", "Kg"], ["Ligninase", "267", "Kg"], ["Lignite (Powder)", "150781", "Kg"], ["Lime Stone Powder", "161926", "Kg"], ["Limonene - 98% - ( Orange Oil)", "151211", "Kg"], ["Linseed Oil", "150474", "Kg"], ["Lipase- C", "272", "Kg"], ["Liver Extract", "262", "Kg"], ["M.P.B.A", "4482001", "Kg"], ["Magnesium chloride", "261", "Kg"], ["Magnesium Stearate", "160369", "Kg"], ["Maize Starch Powder", "8087611", "Kg"], ["Malt Extract", "160454", "Kg"], ["Malto Dextrin", "147994", "Kg"], ["Manganese Sulphate", "155834", "Kg"], ["Mango Flavor", "300", "Kg"], ["Mannan Oligosaccharide (Insoluble)", "258", "Kg"], ["Mannan Oligosaccharide (Water Soluble)", "256", "Kg"], ["Mannase- C", "269", "Kg"], ["Mannitol", "144929", "Kg"], ["Marigold Seeds", "146316", "Kg"], ["Menthi Powder", "151943", "Kg"], ["Methanol", "150772", "Kg"], ["Methi Extract", "158047", "Kg"], ["Methika Choornam", "5394323", "Kg"], ["Methionine Ip", "158371", "Kg"], ["Methyl Eugenol", "144920", "Kg"], ["Methyl Paraben", "185689", "Kg"], ["Mineral Oil", "147528", "Kg"], ["Mineral Powder", "152894", "Kg"], ["Mixed Fruit Powder ( Dry Mix )", "151251", "Kg"], ["Mixed Solvent", "161278", "Kg"], ["Monadara Oil", "156280", "Kg"], ["Mono Ammonium Phosphate", "146158", "Kg"], ["Mono Potassium Phosphate", "4623343", "Kg"], ["Mono Sodium Phosphate", "146227", "Kg"], ["Monocrotophos Tech", "150932", "Kg"], ["Moringa Olerifera Ext.", "158962", "Kg"], ["Musterd Oil", "179261", "Kg"], ["N-Hexane", "148162", "Kg"], ["N-Methyl-2-Pyrrolidone", "5420485", "Kg"], ["Naphthalene Balls", "6275199", "Kg"], ["NATCA", "773257", "Kg"], ["Naturowax Gb11", "181009", "Kg"], ["NB EMULSIFIERS (JET-8)", "144848", "Kg"], ["Neem Extract (Azadirachtin 3% Conc.)", "149979", "Kg"], ["Neem Fruit Powder", "144618", "Kg"], ["NEEM LEAF POWDER", "159978", "Kg"], ["Neem Oil", "148294", "Kg"], ["Niacin", "146074", "Kg"], ["Niba Powder (Feed Supplements)", "146829", "Kg"], ["NITROBENZENE", "151343", "Kg"], ["Non- Ferric Alum Powder 70%", "144911", "Kg"], ["Normal Butanol", "154950", "Kg"], ["Nutrition-D", "253", "Kg"], ["Nutrition- M", "252", "Kg"], ["Nutrition- U (A)", "254", "Kg"], ["Olive Pomace Oil", "144687", "Kg"], ["Orange Oil", "1214247", "Kg"], ["Oregano Oil", "147965", "Kg"], ["Org Fert Humus 85 ( Powder)", "163582", "Kg"], ["Organic Jaggary Powder", "146347", "Kg"], ["Organic Manure", "146085", "Kg"], ["Organic White Powder Tca", "179340", "Kg"], ["Ortho Silicic Acid 19%", "307", "Kg"], ["Ortho Xyelene (B)", "181480", "Kg"], ["P E G - 6000", "156071", "Kg"], ["Palcobutrazol", "159713", "Kg"], ["Pancreatine Powder", "157104", "Kg"], ["Papain", "7928005", "Kg"], ["Pectinase", "294", "Kg"], ["Pectinase- C", "270", "Kg"], ["Penmix - Ds", "146621", "Kg"], ["Penny Royal Oil", "1796011", "Kg"], ["Peppermint Oil", "160728", "Kg"], ["Pepsin", "150700", "Kg"], ["Peptone Extract", "146757", "Kg"], ["Peracetic ( Acurox Sp30)", "161648", "Kg"], ["Peracetic Acid", "157590", "Kg"], ["Petroleum Ether", "179639", "Kg"], ["Phospheric Acid", "158253", "Kg"], ["Phosphorous Acid", "159722", "Kg"], ["Phyllanthus Niruri Ext", "147871", "Kg"], ["Phytase- C", "271", "Kg"], ["Phytase- Liquid", "297", "Kg"], ["Pigment Green B", "180752", "Kg"], ["Pine Oil", "147289", "Kg"], ["Pineapple No-1 (200Ml)", "157590", "Kg"], ["POHA", "156967", "Kg"], ["Poly Aluminium Chloride", "157777", "Kg"], ["Poly Aluminium Chloride (Pac)", "8719174", "Kg"], ["Poly Cationic", "147340", "Kg"], ["Polymeg-6000", "153678", "Kg"], ["Polymer Parrot Green Mm", "162476", "Kg"], ["Polyvinyl Alcohol", "154885", "Kg"], ["Pongamia Oil - Liters", "162156", "Kg"], ["Potassium Chloride", "158442", "Kg"], ["Potassium Di Formate ( Feed Grade)", "9292272", "Kg"], ["Potassium Di Hydrogen O Phosphate - Kh2Po4", "158402", "Kg"], ["Potassium Fulvic Acid", "293", "Kg"], ["Potassium Humate (Ultra Humimax)", "148041", "Kg"], ["Potassium Humate 85% Powder", "162429", "Kg"], ["Potassium Hydrogen Phthalate Ar Qualigens 500Gms", "156365", "Kg"], ["Potassium Hydroxide", "147490", "Kg"], ["Potassium Iodide", "153797", "Kg"], ["Potassium Meta Bi Sulphate", "157077", "Kg"], ["Potassium Monopersulfate", "150510", "Kg"], ["Potassium Nitrate", "148189", "Kg"], ["Potassium Permanganate", "282", "Kg"], ["Potassium Sulphate", "184215", "Kg"], ["Potato Dextrose Agar Broth", "2294167", "Kg"], ["Pottasium Silicate", "182249", "Kg"], ["Precipitated Calcium Carbonate (Precious Metals)", "152854", "Kg"], ["Precipitated Silica", "156810", "Kg"], ["Proplene Glycol", "159297", "Kg"], ["Propyl Paraben", "237024", "Kg"], ["Protease Neutral- C", "275", "Kg"], ["Protein Hydrolysate 80%", "156828", "Kg"], ["Psidium Guajava (Guava) Leaf Ext:", "146045", "Kg"], ["Psyllium Husk 95%", "163958", "Kg"], ["Pvpk-30", "148581", "Kg"], ["Quartz Silica Sand", "161610", "Kg"], ["Quinalphos Tech", "144667", "Kg"], ["Rai Powder", "8981541", "Kg"], ["Rape Seed", "146138", "Kg"], ["Rapeseed Oil", "9102073", "Kg"], ["Riboflavin", "3085253", "Kg"], ["Riped Banana Spray Dried/Dehydrated", "150803", "Kg"], ["Rosemary Oil", "163678", "Kg"], ["S-Allyl-L-Cysteine", "165048", "Kg"], ["S.L.S Powder", "144857", "Kg"], ["Salt Of Phosphorous", "162516", "Kg"], ["Santreat Mz 3050 ( Bkc 50%)", "161935", "Kg"], ["Sargassum Weightii", "147974", "Kg"], ["Seaweed Ag ( Powder) Gr 1", "1337128", "Kg"], ["Seaweed Ag (Powder) Gr 2", "149513", "Kg"], ["Seethafal Seed", "157370", "Kg"], ["Silica Gel", "301", "Kg"], ["Silver Nitrate", "146176", "Kg"], ["Silwet 408", "303", "Kg"], ["Silymarin Extract", "157435", "Kg"], ["Simethicone Oil", "156235", "Kg"], ["Skimmed Milk Powder", "257", "Kg"], ["Sls Liquid Cl-046", "146034", "Kg"], ["Soda Ash Light", "154865", "Kg"], ["Sodium 2,2,3,3 Tetrafluoropropionate (", "153779", "Kg"], ["Sodium Acetate Anhydrous", "159393", "Kg"], ["Sodium Alginate", "152264", "Kg"], ["Sodium Benzoate", "161500", "Kg"], ["Sodium Bicarbonate", "148276", "Kg"], ["Sodium Borohydride", "181250", "Kg"], ["Sodium Butyrate", "4039061", "Kg"], ["Sodium Carbonate", "163593", "Kg"], ["Sodium Chloride (Salt)", "145923", "Kg"], ["Sodium Cynide", "3515099", "Kg"], ["Sodium Hexametaphosphate - Shmp", "148314", "Kg"], ["Sodium Hydroxide", "147577", "Kg"], ["Sodium Lauryl Sulphate Powder", "150792", "Kg"], ["Sodium Meta Silicate", "147773", "Kg"], ["Sodium Molybdate", "147309", "Kg"], ["Sodium Nitrate", "178558", "Kg"], ["Sodium Nitro Phinolate", "147784", "Kg"], ["Sodium Perborate", "164851", "Kg"], ["Sodium Percarbonate Tablets", "146603", "Kg"], ["Sodium Selenate", "150812", "Kg"], ["Sodium Silicate", "148236", "Kg"], ["Sodium Stannate", "150841", "Kg"], ["Sodium sulphate", "278", "Kg"], ["Sodium Thio Sulphate", "153407", "Kg"], ["Sodium Tri Poly Phosphate ( Stpp)", "148108", "Kg"], ["Solvent Napthal", "164229", "Kg"], ["Sorbitol", "148052", "Kg"], ["Soya Flakes", "280", "Kg"], ["Soya Oil", "148180", "Kg"], ["Soyabean Oil", "157788", "Kg"], ["Soyabean Powder", "259", "Kg"], ["Span 80", "158785", "Kg"], ["Spirulina Powder", "146127", "Kg"], ["Spreader Fbc 3T", "147764", "Kg"], ["Starch", "158563", "Kg"], ["Strawberry Flavor- Liquid", "290", "Kg"], ["Sucrose", "161679", "Kg"], ["Sulfur Liquid", "308", "Kg"], ["Sulphomic Acid", "147387", "Kg"], ["Sunflower Oil", "5380027", "Kg"], ["Sunset Yellow", "147907", "Kg"], ["Sweet Orange", "150689", "Kg"], ["Sweet Orangeno-1 ( Dry Mix)", "148032", "Kg"], ["Swertia Chiraita Ext", "162903", "Kg"], ["Sylibum Marianum Extract 80%", "158543", "Kg"], ["Tagetes Oil", "146216", "Kg"], ["Talc Powder", "152620", "Kg"], ["Tanikaya Choornam", "147813", "Kg"], ["Tea Tree Oil", "153163", "Kg"], ["Tetra Hydrofuran (B)", "153525", "Kg"], ["Thiamine Mononitrate", "153687", "Kg"], ["Thiourea", "230059", "Kg"], ["Thyme Oil", "150859", "Kg"], ["Timonacic", "147427", "Kg"], ["Tobacco Seed Oil", "152921", "Kg"], ["Trehalose", "152079", "Kg"], ["Tri Sodium Citrate Dihydrate", "146358", "Kg"], ["Tri Sodium Phosphate - Tsp", "147599", "Kg"], ["Triphala Choornam", "157151", "Kg"], ["Tryptone ( Bacto Grade)", "146194", "Kg"], ["Tulasi Extract Herbal", "158338", "Kg"], ["Tulasi Powder", "148258", "Kg"], ["Tulsi Oil", "147539", "Kg"], ["Tween 20", "152676", "Kg"], ["Tween 80", "157041", "Kg"], ["UNITOP - SA-80", "155825", "Kg"], ["UNITOX - DMA(NO)", "161001", "Kg"], ["Uranine", "147610", "Kg"], ["Urea Technical Industrial Grade", "823059", "Kg"], ["Vacha Choornam", "148153", "Kg"], ["Vanilla Powder", "159462", "Kg"], ["Vantocil I.B ( P H M B ) 20%", "6970122", "Kg"], ["Vermi Compost", "155852", "Kg"], ["Vermiculite Powder", "152121", "Kg"], ["Vetblend Coated Premix (Feed Grade)", "147499", "Kg"], ["Vitamin A Acetate Dry Powder", "9053155", "Kg"], ["Wheat Brain", "152912", "Kg"], ["Xylinase- C", "273", "Kg"], ["Yeast Cell Wall Extract", "260", "Kg"], ["Yeast Extract Powder", "181793", "Kg"], ["Yucca Extract (Feed Supplement)", "178820", "Kg"], ["Yucca Liquid", "279", "Kg"], ["Zinc Sulphate", "146943", "Kg"], ["Sodium Percarbonate", "163658", "Kg"], ["Xanthan Gum", "147697", "Kg"], ["Non- Ferric Alum Powder 70% (Aluminium Sulphate)", "146085", "Kg"], ["Manganese Chloride", "181032", "Kg"], ["US Tins - 1 Kg", "3837548", "Kg"], ["Protease", "6639027", "Kg"], ["Phytase", "154323", "Kg"], ["Zinc EDTA", "158391", "Kg"], ["Pipli Powder", "4246150", "Kg"], ["Quillaja Saponaria Extract", "310", "Kg"], ["Borax", "147648", "Kg"], ["Hydro Gel Powder", "311", "Kg"], ["Copper Sulphate", "147639", "Kg"], ["Choline Chloride", "156013", "Kg"], ["Calcium Hydroxide", "148285", "Kg"], ["Lipase", "8746039", "Kg"], ["Amylase", "154197", "Kg"], ["Xylinase", "161601", "Kg"], ["Halquinol", "146185", "Kg"]];
+
+// ═══════════════════════════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════════════════════════
+const S = {
+  db: null, demo: false,
+  items: [],      // [{id,name,code,uom,reorderLevel}]
+  pm: [],         // print master records
+  inward: [],     // inward records
+  outward: [],    // outward records
+  containers: [], // container records
+  stockMap: {},   // {itemName: {bagsIn,qtyIn,bagsOut,qtyOut}}
+
+  inMode: 'single',
+  inQueue: [],
+  inFound: null,
+  inWh: '',
+
+  owSrc: null,
+  owCont: null,
+
+  camCb: null, camKeep: false, camStream: null, camTimer: null,
+  camLast: '', camCnt: 0,
+  curPage: 'dash',
+};
+
+// ═══════════════════════════════════════════════════════════
+//  FIREBASE / DEMO DB
+// ═══════════════════════════════════════════════════════════
+const DEMO = { items:[], pm:[], inward:[], outward:[], containers:[], _id: 1 };
+
+function cfgKey(){ return 'qrip_cfg'; }
+function loadCfg(){ try{ return JSON.parse(localStorage.getItem(cfgKey())||'null'); }catch(e){ return null; } }
+function saveCfg(c){ localStorage.setItem(cfgKey(), JSON.stringify(c)); }
+
+async function initFirebase(cfg){
+  if(firebase.apps.length) firebase.apps.forEach(a=>a.delete());
+  firebase.initializeApp(cfg);
+  const db = firebase.firestore();
+  // Quick test read
+  await db.collection('_ping').doc('test').set({t: Date.now()});
+  return db;
+}
+
+async function doSetup(){
+  const cfg = {
+    apiKey:    document.getElementById('cfg-apiKey').value.trim(),
+    authDomain:document.getElementById('cfg-authDomain').value.trim(),
+    projectId: document.getElementById('cfg-projectId').value.trim(),
+    storageBucket: document.getElementById('cfg-projectId').value.trim()+'.appspot.com',
+    appId: '1:000000000000:web:000000000000000000000000'
+  };
+  if(!cfg.apiKey||!cfg.authDomain||!cfg.projectId){ showSetupErr('All three fields are required.'); return; }
+  document.getElementById('setup-loading').style.display='block';
+  document.getElementById('setup-btn').disabled=true;
+  try{
+    S.db = await initFirebase(cfg);
+    saveCfg(cfg);
+    launchApp();
+  }catch(e){
+    document.getElementById('setup-loading').style.display='none';
+    document.getElementById('setup-btn').disabled=false;
+    showSetupErr('Connection failed: '+e.message+'. Check your config and make sure Firestore is enabled in Firebase console.');
+  }
+}
+
+function tryDemo(){
+  S.demo = true;
+  S.items = SEED.map((s,i)=>({id:'i'+i, name:s[0], code:s[1], uom:s[2], reorderLevel:0}));
+  launchApp();
+}
+
+function showSetupErr(m){ const e=document.getElementById('cfg-err'); e.textContent=m; e.style.display='block'; }
+
+// ═══════════════════════════════════════════════════════════
+//  DB HELPERS
+// ═══════════════════════════════════════════════════════════
+async function dbAdd(col, data){
+  if(S.demo){ const id='d'+(DEMO._id++); DEMO[col].push({id,...data}); return id; }
+  const ref = await S.db.collection(col).add({...data, createdAt: firebase.firestore.FieldValue.serverTimestamp()});
+  return ref.id;
+}
+async function dbGetAll(col){
+  if(S.demo) return DEMO[col]||[];
+  const snap = await S.db.collection(col).orderBy('createdAt','desc').get();
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function dbGetRecent(col, limit){
+  if(S.demo) return (DEMO[col]||[]).slice(-limit).reverse();
+  const snap = await S.db.collection(col).orderBy('createdAt','desc').limit(limit).get();
+  return snap.docs.map(d=>({id:d.id,...d.data()}));
+}
+async function dbDelete(col, id){
+  if(S.demo){ DEMO[col]=DEMO[col].filter(r=>r.id!==id); return; }
+  await S.db.collection(col).doc(id).delete();
+}
+async function dbExists(col, field, val){
+  if(S.demo) return (DEMO[col]||[]).some(r=>r[field]===val);
+  const snap = await S.db.collection(col).where(field,'==',val).limit(1).get();
+  return !snap.empty;
+}
+async function dbFind(col, field, val){
+  if(S.demo) return (DEMO[col]||[]).find(r=>r[field]===val)||null;
+  const snap = await S.db.collection(col).where(field,'==',val).limit(1).get();
+  if(snap.empty) return null;
+  return {id:snap.docs[0].id, ...snap.docs[0].data()};
+}
+
+// ═══════════════════════════════════════════════════════════
+//  LAUNCH
+// ═══════════════════════════════════════════════════════════
+async function launchApp(){
+  document.getElementById('setup').style.display='none';
+  document.getElementById('app').style.display='flex';
+  document.getElementById('app').style.flexDirection='column';
+  document.getElementById('pm-date').value = fmtDate(new Date());
+  await loadItems();
+  loadDashboard();
+  loadPMRecent();
+  loadStock();
+  loadItemsList();
+}
+
+function fmtDate(d){ return d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}); }
+function fmtDt(d){
+  if(!d) return '';
+  if(d && d.toDate) d = d.toDate();
+  if(typeof d === 'string') d = new Date(d);
+  return d instanceof Date && !isNaN(d) ? d.toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'}) : '';
+}
+
+// ═══════════════════════════════════════════════════════════
+//  SETTINGS
+// ═══════════════════════════════════════════════════════════
+function openSettings(){
+  const cfg = loadCfg()||{};
+  document.getElementById('set-key').value=cfg.apiKey||'';
+  document.getElementById('set-domain').value=cfg.authDomain||'';
+  document.getElementById('set-pid').value=cfg.projectId||'';
+  document.getElementById('modal-bg').classList.add('open');
+}
+function closeMod(){ document.getElementById('modal-bg').classList.remove('open'); }
+async function saveSettings(){
+  const cfg = {
+    apiKey:    document.getElementById('set-key').value.trim(),
+    authDomain:document.getElementById('set-domain').value.trim(),
+    projectId: document.getElementById('set-pid').value.trim(),
+    storageBucket: document.getElementById('set-pid').value.trim()+'.appspot.com',
+    appId:'1:000000000000:web:000000000000000000000000'
+  };
+  document.getElementById('set-msg').textContent='Connecting…';
+  try{
+    S.db = await initFirebase(cfg);
+    saveCfg(cfg); S.demo=false;
+    document.getElementById('set-msg').textContent='✅ Connected!';
+    await loadItems();
+    setTimeout(closeMod,1200);
+  }catch(e){ document.getElementById('set-msg').textContent='❌ '+e.message; }
+}
+async function seedItems(){
+  document.getElementById('seed-btn').disabled=true;
+  document.getElementById('set-msg').textContent='Importing 450 items…';
+  let done=0;
+  for(const s of SEED){
+    const exists = await dbExists('items','code',s[1]);
+    if(!exists){ await dbAdd('items',{name:s[0],code:s[1],uom:s[2],reorderLevel:0}); done++; }
+  }
+  await loadItems(); loadItemsList();
+  document.getElementById('set-msg').textContent=`✅ Imported ${done} items (${SEED.length-done} already existed)`;
+  document.getElementById('seed-btn').disabled=false;
+}
+async function exportData(){
+  const [pm,iw,ow] = await Promise.all([dbGetAll('printMaster'),dbGetAll('inward'),dbGetAll('outward')]);
+  const blob = new Blob([JSON.stringify({printMaster:pm,inward:iw,outward:ow},null,2)],{type:'application/json'});
+  const a=document.createElement('a'); a.href=URL.createObjectURL(blob); a.download='inventory_export_'+Date.now()+'.json'; a.click();
+}
+
+// ═══════════════════════════════════════════════════════════
+//  NAVIGATION
+// ═══════════════════════════════════════════════════════════
+function goPage(p){
+  document.querySelectorAll('.page').forEach(el=>el.classList.remove('active'));
+  document.querySelectorAll('.nb').forEach(el=>el.classList.remove('active'));
+  document.getElementById('pg-'+p).classList.add('active');
+  document.querySelector('[data-p="'+p+'"]').classList.add('active');
+  S.curPage=p;
+  const titles={dash:'Dashboard',inward:'📥 Inward',outward:'📤 Outward',master:'📦 Print Master',stock:'📋 Stock',items:'🧪 Items Master'};
+  document.getElementById('hdr-title').textContent=titles[p]||p;
+  if(p==='dash')   loadDashboard();
+  if(p==='stock')  loadStock();
+  if(p==='items')  loadItemsList();
+  if(p==='master') loadPMRecent();
+}
+function refreshCurrent(){ goPage(S.curPage); }
+
+// ═══════════════════════════════════════════════════════════
+//  TOAST / PROGRESS
+// ═══════════════════════════════════════════════════════════
+let toastT=null;
+function toast(m,t='tok'){ const el=document.getElementById('toast'); el.textContent=m; el.className='t'+t; el.style.display='block'; clearTimeout(toastT); toastT=setTimeout(()=>el.style.display='none',3200); }
+function progress(on){ const el=document.getElementById('progress'); el.style.display=on?'block':'none'; }
+function showRes(id,m,ok){ const el=document.getElementById(id); el.textContent=m; el.className='result '+(ok?'ok':'err'); el.style.display='block'; el.scrollIntoView({behavior:'smooth',block:'nearest'}); }
+function hideRes(id){ document.getElementById(id).style.display='none'; }
+function scanFlash(){ const f=document.getElementById('flash'); f.classList.remove('go'); void f.offsetWidth; f.classList.add('go'); }
+
+// ═══════════════════════════════════════════════════════════
+//  ITEMS MASTER
+// ═══════════════════════════════════════════════════════════
+async function loadItems(){
+  const data = await dbGetAll('items');
+  if(data.length===0 && !S.demo){
+    // If no items in DB yet, use seed in memory only
+    S.items = SEED.map((s,i)=>({id:'s'+i,name:s[0],code:s[1],uom:s[2],reorderLevel:0}));
+  } else {
+    S.items = data.map(d=>({id:d.id,name:d.name||'',code:d.code||'',uom:d.uom||'Kg',reorderLevel:d.reorderLevel||0}));
+  }
+}
+
+async function addItem(){
+  const name=document.getElementById('ni-name').value.trim();
+  const code=document.getElementById('ni-code').value.trim();
+  const uom =document.getElementById('ni-uom').value;
+  const rl  =parseFloat(document.getElementById('ni-reorder').value)||0;
+  if(!name||!code){ showRes('ni-res','Item name and code are required.', false); return; }
+  progress(true);
+  try{
+    await dbAdd('items',{name,code,uom,reorderLevel:rl});
+    await loadItems(); loadItemsList(); loadStock();
+    document.getElementById('ni-name').value=''; document.getElementById('ni-code').value=''; document.getElementById('ni-reorder').value='';
+    showRes('ni-res','✅ '+name+' added successfully.', true);
+    toast('Item added: '+name);
+  }catch(e){ showRes('ni-res','❌ '+e.message, false); }
+  progress(false);
+}
+
+let itemsFiltered=[];
+function filterItems(){
+  const q=document.getElementById('items-q').value.toLowerCase();
+  itemsFiltered = q ? S.items.filter(it=>it.name.toLowerCase().includes(q)||it.code.includes(q)) : S.items;
+  renderItemsList(itemsFiltered);
+}
+function loadItemsList(){ itemsFiltered=[...S.items]; renderItemsList(S.items); }
+function renderItemsList(list){
+  const el=document.getElementById('items-list');
+  if(!list.length){ el.innerHTML='<div class="empty"><div class="ei">🧪</div><p>No items found</p></div>'; return; }
+  el.innerHTML=list.map(it=>`<div class="item-row">
+    <div class="item-name-col">${it.name}</div>
+    <div class="item-code-col">${it.code}</div>
+    <div class="item-uom-col">${it.uom}</div>
+    <button class="item-del-btn" onclick="delItem('${it.id}','${it.name.replace(/'/g,"\'")}')">🗑</button>
+  </div>`).join('');
+}
+async function delItem(id,name){
+  if(!confirm('Delete "'+name+'"?')) return;
+  await dbDelete('items',id);
+  await loadItems(); loadItemsList();
+  toast('Deleted: '+name,'tinfo');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  AUTOCOMPLETE
+// ═══════════════════════════════════════════════════════════
+let acTimer={}, acIdx={};
+function acSearch(val, prefix){
+  clearTimeout(acTimer[prefix]);
+  const box=document.getElementById(prefix+'-ac');
+  if(val.length<1){ box.style.display='none'; return; }
+  acTimer[prefix]=setTimeout(()=>{
+    const q=val.toLowerCase();
+    const hits=S.items.filter(it=>it.name.toLowerCase().includes(q)).slice(0,12);
+    if(!hits.length){ box.style.display='none'; return; }
+    acIdx[prefix]=-1;
+    box.innerHTML=hits.map((it,i)=>`<div class="ac-item" onmousedown="acPick('${prefix}','${it.name.replace(/'/g,"\'")}','${it.code}','${it.uom}')"
+      ontouchstart="acPick('${prefix}','${it.name.replace(/'/g,"\'")}','${it.code}','${it.uom}')" data-i="${i}">
+      <span>${it.name}</span><span class="ac-code">${it.code}</span></div>`).join('');
+    box.style.display='block';
+  },200);
+}
+function acKey(e, prefix){
+  const items=document.querySelectorAll('#'+prefix+'-ac .ac-item');
+  if(e.key==='ArrowDown'){ acIdx[prefix]=Math.min((acIdx[prefix]||0)+1,items.length-1); highlightAc(prefix,items); }
+  else if(e.key==='ArrowUp'){ acIdx[prefix]=Math.max((acIdx[prefix]||0)-1,0); highlightAc(prefix,items); }
+  else if(e.key==='Enter' && (acIdx[prefix]||0)>=0 && items[acIdx[prefix]]){ items[acIdx[prefix]].dispatchEvent(new Event('mousedown')); }
+}
+function highlightAc(p,items){ items.forEach((el,i)=>el.classList.toggle('hi',i===acIdx[p])); }
+function acPick(prefix,name,code,uom){
+  if(prefix==='pm'){
+    document.getElementById('pm-item').value=name;
+    document.getElementById('pm-code').value=code;
+    document.getElementById('pm-uom').value=uom||'Kg';
+    document.getElementById('pm-ac').style.display='none';
+    updatePreview();
+  }
+}
+document.addEventListener('click',e=>{ if(!e.target.closest('.autocomplete')) document.querySelectorAll('.ac-list').forEach(el=>el.style.display='none'); });
+
+// ═══════════════════════════════════════════════════════════
+//  PRINT MASTER
+// ═══════════════════════════════════════════════════════════
+function makeLabel(name, code){
+  let l='';
+  for(let c of name){ if(/[a-zA-Z]/.test(c)){ l+=c.toUpperCase(); if(l.length===3) break; } }
+  return l+'-'+code;
+}
+function pad3(n){ return String(n).padStart(3,'0'); }
+
+function updatePreview(){
+  const name=document.getElementById('pm-item').value.trim();
+  const code=document.getElementById('pm-code').value.trim();
+  const lot =document.getElementById('pm-lot').value.trim();
+  const bags=parseInt(document.getElementById('pm-bags').value)||0;
+  const prev=document.getElementById('pm-preview');
+  if(!name||!code||!lot||bags<1){ prev.style.display='none'; return; }
+  const lbl=makeLabel(name,code), yr=new Date().getFullYear();
+  const n=Math.min(bags,3);
+  let lines=[];
+  for(let i=1;i<=n;i++) lines.push(lbl+'-'+yr+'-'+lot+'-'+pad3(i));
+  if(bags>3) lines.push('… ('+( bags-3)+' more)');
+  document.getElementById('pm-prev-ids').textContent=lines.join('\n');
+  prev.style.display='block';
+}
+
+async function submitPM(){
+  const name=document.getElementById('pm-item').value.trim();
+  const code=document.getElementById('pm-code').value.trim();
+  const sup =document.getElementById('pm-sup').value.trim();
+  const inv =document.getElementById('pm-inv').value.trim();
+  const bat =document.getElementById('pm-batch').value.trim();
+  const lot =document.getElementById('pm-lot').value.trim();
+  const pqty=parseFloat(document.getElementById('pm-pqty').value)||0;
+  const bags=parseInt(document.getElementById('pm-bags').value)||0;
+  const uom =document.getElementById('pm-uom').value;
+  const rem =document.getElementById('pm-rem').value.trim();
+  if(!name||!sup||!inv||!lot||!pqty||bags<1){ showRes('pm-res','Please fill all required fields (*).',false); return; }
+  const lbl=makeLabel(name,code), yr=new Date().getFullYear();
+  const today=new Date().toISOString().split('T')[0];
+  progress(true);
+  try{
+    const rows=[];
+    for(let i=1;i<=bags;i++){
+      const pid=lbl+'-'+yr+'-'+lot+'-'+pad3(i);
+      rows.push({bagNo:i,receivedDate:today,supplier:sup,invoiceNo:inv,batchCode:bat,
+        itemName:name,itemCode:code,lotNo:lot,labelName:lbl,packId:pid,
+        packQty:pqty,uom,noOfBags:bags,remarks:rem});
+    }
+    for(const r of rows) await dbAdd('printMaster',r);
+    toast('✅ '+bags+' bags created!');
+    showRes('pm-res','✅ '+bags+' Pack IDs created in database\nFirst: '+rows[0].packId+'\nLast: '+rows[bags-1].packId,true);
+    document.getElementById('pm-res').style.whiteSpace='pre-line';
+    ['pm-sup','pm-inv','pm-batch','pm-item','pm-code','pm-lot','pm-pqty','pm-bags','pm-rem'].forEach(id=>document.getElementById(id).value='');
+    document.getElementById('pm-preview').style.display='none';
+    document.getElementById('pm-uom').value='Kg';
+    loadPMRecent(); loadStock();
+  }catch(e){ showRes('pm-res','❌ '+e.message,false); }
+  progress(false);
+}
+
+async function loadPMRecent(){
+  const rows = await dbGetRecent('printMaster',50);
+  const tbl=document.getElementById('pm-tbl');
+  if(!rows.length){ tbl.innerHTML='<tr><td colspan="5" class="tbl-empty">No entries yet</td></tr>'; return; }
+  // Show one row per packId (first of each batch)
+  const seen=new Set(); const unique=[];
+  rows.forEach(r=>{ if(!seen.has(r.labelName)){ seen.add(r.labelName); unique.push(r); } });
+  tbl.innerHTML=unique.slice(0,20).map(r=>`<tr>
+    <td><span style="font-family:var(--mono);font-size:10px;color:var(--amber3)">${r.packId||''}</span></td>
+    <td><div class="td-name">${r.itemName||''}</div><div class="td-code">${r.itemCode||''}</div></td>
+    <td>${r.noOfBags||''}</td>
+    <td style="font-size:12px;color:var(--dim)">${r.supplier||''}</td>
+    <td style="font-size:11px;color:var(--muted)">${fmtDt(r.receivedDate)}</td>
+  </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  PACK ID LOOKUP
+// ═══════════════════════════════════════════════════════════
+async function lookupPack(packId){
+  const r = await dbFind('printMaster','packId',packId.trim());
+  if(!r) return {found:false};
+  return {found:true,id:r.id,bagNo:r.bagNo,itemName:r.itemName,itemCode:r.itemCode,lotNo:r.lotNo,packQty:r.packQty,uom:r.uom,labelName:r.labelName};
+}
+async function isInward(packId){ return await dbExists('inward','packId',packId.trim()); }
+async function isOutward(packId){
+  if(S.demo) return (DEMO.outward||[]).some(r=>r.sourceId===packId&&(r.transactionType==='ISSUE'||r.transactionType==='ADJUSTMENT'));
+  const snap=await S.db.collection('outward').where('sourceId','==',packId.trim()).where('transactionType','in',['ISSUE','ADJUSTMENT']).limit(1).get();
+  return !snap.empty;
+}
+async function lookupContainer(cid){
+  const r=await dbFind('containers','containerId',cid.trim());
+  if(!r) return {found:false};
+  return {found:true,...r};
+}
+
+// ═══════════════════════════════════════════════════════════
+//  CAMERA
+// ═══════════════════════════════════════════════════════════
+async function camOpen(cb, keep=false, label='Scan QR Code'){
+  S.camCb=cb; S.camKeep=keep; S.camLast=''; S.camCnt=0;
+  document.getElementById('cam-lbl').textContent=label;
+  document.getElementById('cam-stat').textContent='Starting camera…';
+  document.getElementById('cam-count').textContent='';
+  document.getElementById('cam-done').style.display=keep?'block':'none';
+  document.getElementById('cam').classList.add('open');
+  try{
+    S.camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:{ideal:'environment'},width:{ideal:1280}}});
+    const v=document.getElementById('cam-video');
+    v.srcObject=S.camStream; await v.play();
+    document.getElementById('cam-stat').textContent='Point at QR code on the bag';
+    S.camTimer=setInterval(camFrame,200);
+  }catch(e){
+    document.getElementById('cam').classList.remove('open');
+    toast('Camera error: '+e.message+'. Tap the scan area and allow camera access.','terr');
+  }
+}
+function camFrame(){
+  const v=document.getElementById('cam-video');
+  if(!v||v.readyState<2) return;
+  const c=document.createElement('canvas'); c.width=v.videoWidth; c.height=v.videoHeight;
+  c.getContext('2d').drawImage(v,0,0);
+  const img=c.getContext('2d').getImageData(0,0,c.width,c.height);
+  const code=jsQR(img.data,img.width,img.height,{inversionAttempts:'attemptBoth'});
+  if(code&&code.data&&code.data!==S.camLast){
+    S.camLast=code.data;
+    navigator.vibrate&&navigator.vibrate([80,40,80]);
+    scanFlash();
+    if(!S.camKeep) camClose();
+    S.camCb&&S.camCb(code.data);
+    if(S.camKeep){
+      S.camCnt++;
+      document.getElementById('cam-count').textContent=S.camCnt+' scanned';
+      setTimeout(()=>{ S.camLast=''; },1800);
+    }
+  }
+}
+function camClose(){
+  clearInterval(S.camTimer); S.camTimer=null;
+  if(S.camStream){ S.camStream.getTracks().forEach(t=>t.stop()); S.camStream=null; }
+  document.getElementById('cam').classList.remove('open');
+  document.getElementById('cam-video').srcObject=null;
+}
+function camDone(){ camClose(); }
+
+// ═══════════════════════════════════════════════════════════
+//  INWARD
+// ═══════════════════════════════════════════════════════════
+function setInMode(m){
+  S.inMode=m;
+  document.querySelectorAll('.topt').forEach((el,i)=>el.classList.toggle('on',i===(m==='single'?0:1)));
+  document.getElementById('in-single-res').style.display='none';
+  document.getElementById('in-bulk-panel').style.display=m==='bulk'?'block':'none';
+  document.getElementById('in-scan-txt').textContent=m==='bulk'?'Tap to Start Bulk Scan':'Tap to Scan QR Code';
+  hideRes('in-res');
+}
+async function inScan(){
+  const wh=document.getElementById('in-wh').value;
+  if(!wh){ toast('Select a warehouse first','terr'); return; }
+  S.inWh=wh; hideRes('in-res');
+  if(S.inMode==='single'){
+    S.inFound=null;
+    document.getElementById('in-single-res').style.display='none';
+    await camOpen(pid=>inHandleSingle(pid), false, '📦 Scan Pack ID');
+  } else {
+    await camOpen(pid=>inHandleBulk(pid), true, '📚 Bulk Scan — '+wh);
+  }
+}
+async function inHandleSingle(pid){
+  progress(true);
+  const r=await lookupPack(pid);
+  progress(false);
+  if(!r.found){ toast('Pack ID not found in database','terr'); return; }
+  S.inFound={...r, packId:pid};
+  document.getElementById('in-rname').textContent=r.itemName;
+  document.getElementById('in-rpid').textContent=pid;
+  document.getElementById('in-rbag').textContent=r.bagNo;
+  document.getElementById('in-rqty').textContent=r.packQty+' '+r.uom;
+  document.getElementById('in-rlot').textContent=r.lotNo;
+  document.getElementById('in-single-res').style.display='block';
+}
+async function inHandleBulk(pid){
+  if(S.inQueue.find(q=>q.packId===pid)){ document.getElementById('cam-stat').textContent='⚠ Already queued: '+pid.split('-').pop(); return; }
+  const r=await lookupPack(pid);
+  if(r.found){
+    S.inQueue.push({packId:pid,...r});
+    renderBulkQueue();
+    document.getElementById('cam-stat').textContent='✅ Added: '+r.itemName;
+  } else {
+    document.getElementById('cam-stat').textContent='❌ Not found: '+pid;
+  }
+}
+function renderBulkQueue(){
+  const n=S.inQueue.length;
+  document.getElementById('in-q-lbl').textContent=n+' bag'+(n!==1?'s':'')+' queued';
+  document.getElementById('in-clr').style.display=n?'block':'none';
+  document.getElementById('in-bulk-submit').style.display=n?'block':'none';
+  document.getElementById('in-bulk-submit').textContent='✅ Submit '+n+' Bag'+(n!==1?'s':'')+' to Database';
+  const el=document.getElementById('in-q-list');
+  if(!n){ el.innerHTML='<div class="empty"><div class="ei">📷</div><p>Scan bags above — they queue here</p></div>'; return; }
+  el.innerHTML=S.inQueue.map((it,i)=>`<div class="q-item" id="qi${i}">
+    <span class="q-ico ${it._ok?'q-ok':it._err?'q-err':''}">📦</span>
+    <div class="q-info">
+      <div class="q-name">${it.itemName}</div>
+      <div class="q-meta">Bag ${it.bagNo} · ${it.packQty} ${it.uom}</div>
+      <div class="q-id">${it.packId}</div>
+    </div>
+    <button class="q-del" onclick="removeBulkItem(${i})">✕</button>
+  </div>`).join('');
+}
+function removeBulkItem(i){ S.inQueue.splice(i,1); renderBulkQueue(); }
+function clearBulkQueue(){ S.inQueue=[]; renderBulkQueue(); hideRes('in-res'); }
+async function confirmInward(){
+  if(!S.inFound) return;
+  const btn=document.getElementById('in-confirm'); btn.disabled=true;
+  progress(true);
+  try{
+    const already=await isInward(S.inFound.packId);
+    if(already){ showRes('in-res','❌ This Pack ID is already recorded in Inward.',false); btn.disabled=false; progress(false); return; }
+    await dbAdd('inward',{dateTime:new Date().toISOString(),warehouse:S.inWh,packId:S.inFound.packId,
+      itemName:S.inFound.itemName,itemCode:S.inFound.itemCode,lotNo:S.inFound.lotNo,
+      bagNo:S.inFound.bagNo,packQty:S.inFound.packQty,uom:S.inFound.uom});
+    toast('✅ '+S.inFound.itemName+' received in '+S.inWh);
+    showRes('in-res','✅ Inward recorded — '+S.inFound.itemName+' · Bag #'+S.inFound.bagNo+' · '+S.inWh,true);
+    clearInSingle(); loadStock();
+  }catch(e){ showRes('in-res','❌ '+e.message,false); }
+  btn.disabled=false; progress(false);
+}
+function clearInSingle(){ S.inFound=null; document.getElementById('in-single-res').style.display='none'; }
+async function submitBulk(){
+  if(!S.inQueue.length) return;
+  const btn=document.getElementById('in-bulk-submit'); btn.disabled=true; progress(true);
+  let done=0,fail=0;
+  for(let i=0;i<S.inQueue.length;i++){
+    const it=S.inQueue[i];
+    try{
+      const already=await isInward(it.packId);
+      if(already){ S.inQueue[i]._err=true; S.inQueue[i]._errmsg='Already recorded'; fail++; }
+      else{
+        await dbAdd('inward',{dateTime:new Date().toISOString(),warehouse:S.inWh,packId:it.packId,
+          itemName:it.itemName,itemCode:it.itemCode,lotNo:it.lotNo,bagNo:it.bagNo,packQty:it.packQty,uom:it.uom});
+        S.inQueue[i]._ok=true; done++;
+      }
+    }catch(e){ S.inQueue[i]._err=true; fail++; }
+  }
+  renderBulkQueue();
+  document.getElementById('in-q-lbl').textContent='✅ '+done+' submitted'+(fail?' · '+fail+' skipped':'');
+  btn.style.display='none';
+  showRes('in-res','✅ '+done+' of '+S.inQueue.length+' bags recorded in '+S.inWh+(fail?' ('+fail+' skipped — duplicates)':''),done>0);
+  loadStock();
+  btn.disabled=false; progress(false);
+  setTimeout(()=>{ if(done>0){ clearBulkQueue(); hideRes('in-res'); btn.style.display='block'; btn.textContent='✅ Submit Bags to Database'; } },4000);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  OUTWARD
+// ═══════════════════════════════════════════════════════════
+function owTxnChange(){
+  const t=document.getElementById('ow-txn').value;
+  document.getElementById('ow-cont-section').style.display=t==='TRANSFER'?'block':'none';
+  document.getElementById('ow-rem-req').style.display=t==='ADJUSTMENT'?'inline':'none';
+  if(t!=='TRANSFER'){ S.owCont=null; document.getElementById('ow-cont-card').style.display='none'; document.getElementById('ow-cont-txt').textContent='Tap to Scan Container ID'; }
+}
+async function owScanSrc(){
+  hideRes('ow-res');
+  await camOpen(async pid=>{
+    progress(true);
+    const r=await lookupPack(pid);
+    progress(false);
+    if(!r.found){ toast('Pack ID not found in database','terr'); return; }
+    S.owSrc={...r,packId:pid};
+    document.getElementById('ow-src-name').textContent=r.itemName;
+    document.getElementById('ow-src-pid').textContent=pid;
+    document.getElementById('ow-src-bag').textContent=r.bagNo;
+    document.getElementById('ow-src-qty').textContent=r.packQty+' '+r.uom;
+    document.getElementById('ow-src-lot').textContent=r.lotNo;
+    document.getElementById('ow-src-card').style.display='block';
+    document.getElementById('ow-src-txt').textContent='🔄 Scan Different';
+  }, false, '📷 Scan Source Pack ID');
+}
+async function owScanCont(){
+  await camOpen(async cid=>{
+    progress(true);
+    const r=await lookupContainer(cid);
+    progress(false);
+    if(!r.found){ toast('Container ID not found in database','terr'); return; }
+    S.owCont=r;
+    document.getElementById('ow-cont-name').textContent=r.itemName||cid;
+    document.getElementById('ow-cont-id').textContent=cid;
+    document.getElementById('ow-cont-qty').textContent=(r.currentQty||r.physicalQty||0)+' '+(r.uom||'Kg');
+    document.getElementById('ow-cont-card').style.display='block';
+    document.getElementById('ow-cont-txt').textContent='🔄 Scan Different Container';
+  }, false, '📷 Scan Container ID');
+}
+async function submitOutward(){
+  const txn=document.getElementById('ow-txn').value;
+  const typ=document.getElementById('ow-type').value;
+  const to =document.getElementById('ow-to').value;
+  const qty=parseFloat(document.getElementById('ow-qty').value);
+  const bom=document.getElementById('ow-bom').value.trim();
+  const rem=document.getElementById('ow-rem').value.trim();
+  if(!S.owSrc){  toast('Scan a Source Pack ID first','terr'); return; }
+  if(!txn){ toast('Select Transaction Type','terr'); return; }
+  if(!typ){ toast('Select Issue Type','terr'); return; }
+  if(!to){  toast('Select Issued To','terr'); return; }
+  if(!qty||qty<=0){ toast('Enter a valid Issued Qty','terr'); return; }
+  if(txn==='TRANSFER'&&!S.owCont){ toast('Scan Container ID for Transfer','terr'); return; }
+  if(txn==='ADJUSTMENT'&&!rem){ toast('Remarks required for Adjustment','terr'); return; }
+  progress(true);
+  try{
+    const iw=await isInward(S.owSrc.packId);
+    if(!iw&&txn!=='TRANSFER'){ showRes('ow-res','❌ Pack ID not received in Inward yet.',false); progress(false); return; }
+    if(txn!=='TRANSFER'){
+      const ow=await isOutward(S.owSrc.packId);
+      if(ow){ showRes('ow-res','❌ Pack ID already processed in Outward.',false); progress(false); return; }
+    }
+    await dbAdd('outward',{
+      dateOfIssue:new Date().toISOString(),transactionType:txn,issueType:typ,
+      sourceId:S.owSrc.packId,containerId:S.owCont?.containerId||'',
+      issuedQty:qty,bomNo:bom,issuedTo:to,
+      itemName:S.owSrc.itemName,itemCode:S.owSrc.itemCode,lotNo:S.owSrc.lotNo,
+      bagNo:S.owSrc.bagNo,packQty:S.owSrc.packQty,uom:S.owSrc.uom,remarks:rem
+    });
+    toast('✅ '+txn+' recorded!');
+    showRes('ow-res','✅ '+txn+' — '+S.owSrc.itemName+' · '+qty+' Kg → '+to,true);
+    S.owSrc=null; S.owCont=null;
+    ['ow-src-card','ow-cont-card'].forEach(id=>document.getElementById(id).style.display='none');
+    document.getElementById('ow-src-txt').textContent='Tap to Scan Source Pack ID';
+    document.getElementById('ow-cont-txt').textContent='Tap to Scan Container ID';
+    document.getElementById('ow-qty').value=''; document.getElementById('ow-bom').value=''; document.getElementById('ow-rem').value='';
+    loadStock();
+  }catch(e){ showRes('ow-res','❌ '+e.message,false); }
+  progress(false);
+}
+
+// ═══════════════════════════════════════════════════════════
+//  STOCK
+// ═══════════════════════════════════════════════════════════
+let stockAll=[];
+async function loadStock(){
+  progress(true);
+  const [iw,ow] = await Promise.all([dbGetAll('inward'), dbGetAll('outward')]);
+  const map={};
+  iw.forEach(r=>{
+    const k=r.itemName; if(!k) return;
+    if(!map[k]) map[k]={bagsIn:0,qtyIn:0,bagsOut:0,qtyOut:0,uom:r.uom||'Kg',code:r.itemCode||''};
+    map[k].bagsIn++; map[k].qtyIn+=parseFloat(r.packQty)||0;
+  });
+  ow.forEach(r=>{
+    const k=r.itemName; if(!k) return;
+    if(!map[k]) map[k]={bagsIn:0,qtyIn:0,bagsOut:0,qtyOut:0,uom:r.uom||'Kg',code:r.itemCode||''};
+    map[k].bagsOut++; map[k].qtyOut+=parseFloat(r.issuedQty)||0;
+  });
+  // Merge with items master for reorder level
+  const itemMap={};
+  S.items.forEach(it=>{ itemMap[it.name]={reorder:it.reorderLevel||0,uom:it.uom,code:it.code}; });
+  stockAll = Object.entries(map).map(([name,v])=>{
+    const im=itemMap[name]||{reorder:0,uom:v.uom,code:v.code};
+    const qtyStock=v.qtyIn-v.qtyOut;
+    let status;
+    if(qtyStock<=0) status='OUT OF STOCK';
+    else if(im.reorder>0&&qtyStock<=im.reorder) status='REORDER';
+    else status='IN STOCK';
+    return {name,code:v.code||im.code,uom:v.uom||im.uom,bagsIn:v.bagsIn,qtyIn:v.qtyIn,bagsOut:v.bagsOut,qtyOut:v.qtyOut,qtyStock,status};
+  }).sort((a,b)=>a.name.localeCompare(b.name));
+  S.stockMap=map;
+  renderStock(stockAll);
+  progress(false);
+}
+function filterStock(){
+  const q=document.getElementById('stk-q').value.toLowerCase();
+  const f=document.getElementById('stk-f').value;
+  let d=stockAll;
+  if(q) d=d.filter(r=>r.name.toLowerCase().includes(q)||r.code.includes(q));
+  if(f) d=d.filter(r=>r.status===f.replace('Out of Stock','OUT OF STOCK'));
+  renderStock(d);
+}
+function renderStock(data){
+  const b=document.getElementById('stk-body');
+  if(!data.length){ b.innerHTML='<tr><td colspan="7" class="tbl-empty">No stock data</td></tr>'; return; }
+  const badgeCls={
+    'IN STOCK':'b-ok','REORDER':'b-warn','OUT OF STOCK':'b-err'
+  };
+  b.innerHTML=data.map(r=>`<tr>
+    <td><div class="td-name">${r.name}</div><div class="td-code">${r.code}</div></td>
+    <td>${r.uom}</td>
+    <td class="td-val">${r.bagsIn}</td>
+    <td class="td-val">${r.qtyIn.toFixed(1)}</td>
+    <td style="color:var(--red2);font-weight:600">${r.qtyOut.toFixed(1)}</td>
+    <td style="font-weight:800;color:${r.qtyStock<=0?'var(--red2)':r.qtyStock<10?'var(--amber2)':'var(--green2)'}">${r.qtyStock.toFixed(1)}</td>
+    <td><span class="badge ${badgeCls[r.status]||'b-dim'}">${r.status.replace('OUT OF STOCK','OUT').replace('IN STOCK','OK')}</span></td>
+  </tr>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  DASHBOARD
+// ═══════════════════════════════════════════════════════════
+async function loadDashboard(){
+  progress(true);
+  const [pm,iw,ow] = await Promise.all([dbGetAll('printMaster'),dbGetAll('inward'),dbGetAll('outward')]);
+  const totalPM=pm.length, totalIW=iw.length, totalOW=ow.length;
+  const pmIds=new Set(pm.map(r=>r.packId));
+  const iwIds=new Set(iw.map(r=>r.packId));
+  const pending=[...pmIds].filter(id=>!iwIds.has(id)).length;
+
+  document.getElementById('k-pm').textContent=totalPM;
+  document.getElementById('k-iw').textContent=totalIW;
+  document.getElementById('k-ow').textContent=totalOW;
+  document.getElementById('k-pend').textContent=pending;
+  document.getElementById('dash-ts').textContent='Updated '+new Date().toLocaleTimeString();
+
+  // Stock counts
+  const oos=stockAll.filter(r=>r.status==='OUT OF STOCK').length;
+  const inS=stockAll.filter(r=>r.status==='IN STOCK').length;
+  document.getElementById('k-oos').textContent=oos;
+  document.getElementById('k-instock').textContent=inS;
+
+  // Consumption by dept
+  const dept={};
+  ow.filter(r=>r.transactionType==='ISSUE').forEach(r=>{ const d=r.issuedTo||'—'; dept[d]=(dept[d]||0)+(parseFloat(r.issuedQty)||0); });
+  renderBarChart('dash-dept', Object.entries(dept).sort((a,b)=>b[1]-a[1]).slice(0,10), 'dept');
+
+  // Monthly trend
+  const month={};
+  ow.forEach(r=>{
+    let d=r.dateOfIssue; if(d&&d.toDate) d=d.toDate(); else if(typeof d==='string') d=new Date(d);
+    if(d instanceof Date&&!isNaN(d)){
+      const mk=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0');
+      month[mk]=(month[mk]||0)+(parseFloat(r.issuedQty)||0);
+    }
+  });
+  renderBarChart('dash-month', Object.entries(month).sort((a,b)=>a[0].localeCompare(b[0])).slice(-8), 'green');
+
+  // Top items consumed
+  const items={};
+  ow.filter(r=>r.transactionType==='ISSUE').forEach(r=>{ const n=r.itemName||'—'; items[n]=(items[n]||0)+(parseFloat(r.issuedQty)||0); });
+  renderBarChart('dash-items', Object.entries(items).sort((a,b)=>b[1]-a[1]).slice(0,20), 'dept');
+
+  progress(false);
+}
+function renderBarChart(id, entries, type){
+  const el=document.getElementById(id);
+  if(!entries.length){ el.innerHTML='<div class="empty"><div class="ei">📊</div><p>No data yet</p></div>'; return; }
+  const max=Math.max(...entries.map(e=>e[1]));
+  el.innerHTML=entries.map(([lbl,val])=>`<div class="bar-row">
+    <div class="bar-lbl" title="${lbl}">${lbl}</div>
+    <div class="bar-track"><div class="bar-fill ${type==='green'?'bar-green':''}" style="width:${Math.max(Math.round(val/max*100),8)}%">
+      <span class="bar-val">${val.toFixed(1)}</span>
+    </div></div>
+  </div>`).join('');
+}
+
+// ═══════════════════════════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════════════════════════
+window.addEventListener('DOMContentLoaded', async()=>{
+  const cfg=loadCfg();
+  if(cfg){
+    document.getElementById('cfg-apiKey').value=cfg.apiKey||'';
+    document.getElementById('cfg-authDomain').value=cfg.authDomain||'';
+    document.getElementById('cfg-projectId').value=cfg.projectId||'';
+    document.getElementById('setup-loading').style.display='block';
+    document.getElementById('setup-btn').disabled=true;
+    try{
+      S.db=await initFirebase(cfg);
+      launchApp();
+    }catch(e){
+      document.getElementById('setup-loading').style.display='none';
+      document.getElementById('setup-btn').disabled=false;
+      showSetupErr('Auto-connect failed: '+e.message);
+    }
+  }
+});
+</script>
+</body>
+</html>
